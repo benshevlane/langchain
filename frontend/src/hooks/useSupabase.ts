@@ -7,6 +7,7 @@ interface UseSupabaseOptions {
   order?: { column: string; ascending?: boolean }
   limit?: number
   filters?: Record<string, string | number | boolean>
+  gte?: { column: string; value: string }
 }
 
 interface UseSupabaseResult<T> {
@@ -22,6 +23,7 @@ export function useSupabase<T>({
   order,
   limit = 100,
   filters,
+  gte,
 }: UseSupabaseOptions): UseSupabaseResult<T> {
   const [data, setData] = useState<T[]>([])
   const [loading, setLoading] = useState(true)
@@ -48,6 +50,9 @@ export function useSupabase<T>({
           query = query.eq(key, value)
         }
       }
+      if (gte) {
+        query = query.gte(gte.column, gte.value)
+      }
       if (order) {
         query = query.order(order.column, { ascending: order.ascending ?? false })
       }
@@ -68,7 +73,7 @@ export function useSupabase<T>({
 
     run()
     return () => { cancelled = true }
-  }, [table, select, limit, tick, JSON.stringify(order), JSON.stringify(filters)])
+  }, [table, select, limit, tick, JSON.stringify(order), JSON.stringify(filters), JSON.stringify(gte)])
 
   return { data, loading, error, refetch }
 }
