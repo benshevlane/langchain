@@ -489,6 +489,13 @@ async def cmd_unknown(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 # Per-user conversation history (last 20 messages)
 _conversation_history: dict[int, deque] = defaultdict(lambda: deque(maxlen=20))
 
+# Fast-path regex: "list/show/see ..." + data noun → recall from DB, skip LLM router
+_RECALL_SHORTCUT_RE = _re.compile(
+    r"^(list|show|see|display|what are|what were|get|pull up)\b"
+    r".*(keyword|opportunit|prospect|gap|brief|backlink|result)",
+    _re.IGNORECASE,
+)
+
 _NL_SYSTEM_PROMPT = """You are Ralf, a proactive SEO agent for three interconnected websites:
 
 1. kitchensdirectory.co.uk — Directory of 159+ verified UK handmade kitchen makers. 11 styles, 4 budget tiers. Monetised via ads + leads.
@@ -593,6 +600,7 @@ CRITICAL RULES:
 3. When the user says "store" or "save" or "remember" content — that means write it to the database using store_content. Do NOT search the web.
    When the user gives workflow instructions ("save results", "don't use the API so much", "cache results", "be more efficient", etc.), acknowledge the instruction and confirm what you'll do differently. Do NOT interpret workflow guidance as a task request.
 4. To review OUR OWN sites, use list_blogs (for blog posts) or recall (for database). Do NOT use web_search to look at our own sites — Tavily returns competitor content, not ours.
+   When the user says "list", "show", or "what are" followed by keywords/opportunities/prospects/gaps, ALWAYS use recall — they want saved data, not a new analysis. Only use content_gap or keyword_research when the user explicitly asks to FIND or RUN something new.
 5. Keep responses SHORT. This is Telegram. Max 3-4 short paragraphs.
 6. ALWAYS follow through. Never say "give me a sec" or "let me pull that" without actually returning an action. If you need to do something, return the action JSON.
 7. You have full conversation history, a Supabase database, and an activity log of everything you've done. Never say you can't remember or don't have memory. When the user asks what you've done, use the recall_activities action to look it up.
@@ -1279,6 +1287,40 @@ async def handle_natural_language(update: Update, context: ContextTypes.DEFAULT_
         # Add to conversation history
         history = _conversation_history[user_id]
         history.append({"role": "user", "content": user_text})
+
+        # Fast-path: "list/show X" → recall from database (skip LLM router)
+        if _RECALL_SHORTCUT_RE.search(user_text):
+            try:
+                await update.message.chat.send_action("typing")
+                db_results = await asyncio.get_event_loop().run_in_executor(
+                    None, partial(_recall_from_database, user_text)
+                )
+                if db_results and db_results.strip():
+                    summary = await asyncio.get_event_loop().run_in_executor(
+                        None,
+                        partial(
+                            _call_openrouter_sync,
+                            list(history)
+                            + [
+                                {
+                                    "role": "user",
+                                    "content": (
+                                        f"Here's what I found in our database:\n\n"
+                                        f"{db_results}\n\n"
+                                        f"Summarise this for me naturally."
+                                    ),
+                                }
+                            ],
+                            _NL_SYSTEM_PROMPT,
+                        ),
+                    )
+                    await update.message.reply_text(summary)
+                    history.append({"role": "assistant", "content": summary[:300]})
+                    return
+                # DB returned nothing — fall through to normal LLM routing
+            except Exception:
+                logger.error("Recall shortcut failed: %s", traceback.format_exc())
+                # Fall through to normal LLM routing
 
         # Build messages for the LLM (include history for context)
         messages = list(history)
