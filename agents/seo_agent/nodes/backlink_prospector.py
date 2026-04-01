@@ -337,18 +337,6 @@ def _discover_bloggers(target_site: str) -> list[dict[str, Any]]:
     except Exception:
         logger.warning("Blogger discovery search failed", exc_info=True)
 
-    # Fetch DR for the top prospects (limit Ahrefs calls)
-    from agents.seo_agent.tools.ahrefs_tools import get_domain_rating
-    for p in prospects[:10]:  # Only check DR for first 10
-        try:
-            dr_data = get_domain_rating(p["domain"])
-            if isinstance(dr_data, dict):
-                p["dr"] = dr_data.get("domain_rating", 0)
-            elif isinstance(dr_data, (int, float)):
-                p["dr"] = dr_data
-        except Exception:
-            pass  # DR stays at 0, will be retried during enrichment
-
     logger.info("Blogger discovery found %d prospects", len(prospects))
     return prospects
 
@@ -451,18 +439,6 @@ def _search_roundups(
                 "mentions_competitors": mentioned_competitors,
                 "already_lists_us": already_lists_us,
             })
-
-    # Fetch DR for top prospects
-    from agents.seo_agent.tools.ahrefs_tools import get_domain_rating
-    for p in prospects[:10]:
-        try:
-            dr_data = get_domain_rating(p["domain"])
-            if isinstance(dr_data, dict):
-                p["dr"] = dr_data.get("domain_rating", 0)
-            elif isinstance(dr_data, (int, float)):
-                p["dr"] = dr_data
-        except Exception:
-            pass
 
     logger.info(
         "Roundup search found %d listicle prospects (%d mentioning competitors)",
@@ -768,6 +744,38 @@ def run_backlink_prospector(state: SEOAgentState) -> dict[str, Any]:
         len(unique_prospects),
         len(all_prospects),
     )
+
+    # ------------------------------------------------------------------
+    # Batch DR enrichment — fetch real Ahrefs DR for every unique domain
+    # that doesn't already have it, so displayed DR is always accurate.
+    # ------------------------------------------------------------------
+    from agents.seo_agent.tools.ahrefs_tools import get_domain_rating
+
+    domains_needing_dr = {
+        p.get("domain", "")
+        for p in unique_prospects
+        if not p.get("dr") and p.get("domain")
+    }
+    dr_cache: dict[str, float] = {}
+    for dom in domains_needing_dr:
+        try:
+            dr_data = get_domain_rating.invoke(dom)
+            if isinstance(dr_data, dict):
+                dr_cache[dom] = dr_data.get("domain_rating", 0)
+            elif isinstance(dr_data, (int, float)):
+                dr_cache[dom] = float(dr_data)
+        except Exception:
+            logger.debug("DR fetch failed for %s", dom, exc_info=True)
+
+    if dr_cache:
+        for p in unique_prospects:
+            dom = p.get("domain", "")
+            if not p.get("dr") and dom in dr_cache:
+                p["dr"] = dr_cache[dom]
+        logger.info(
+            "Enriched DR for %d/%d domains",
+            len(dr_cache), len(domains_needing_dr),
+        )
 
     # Apply min_dr filter
     if min_dr > 0:
