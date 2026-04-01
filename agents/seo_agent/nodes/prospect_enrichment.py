@@ -2,17 +2,214 @@
 
 For each new prospect, summarises the page, extracts contact patterns,
 pulls DR/traffic from Ahrefs data, and checks competitor link overlap.
+
+Contact discovery uses a multi-source pipeline:
+1. Check article page for author/email.
+2. Crawl /contact, /about, /write-for-us pages for emails.
+3. Hunter.io lookup (domain search + email finder).
+4. LLM extraction as final fallback.
 """
 
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any
+from urllib.parse import urlparse
+
+import httpx
 
 from agents.seo_agent.state import SEOAgentState
 from agents.seo_agent.tools import llm_router, supabase_tools
 
 logger = logging.getLogger(__name__)
+
+_EMAIL_REGEX = re.compile(
+    r"[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}",
+)
+
+_CONTACT_PATHS = ("/contact", "/about", "/write-for-us", "/advertise", "/contact-us")
+
+_FETCH_TIMEOUT = 12
+_USER_AGENT = "Mozilla/5.0 (compatible; RalfSEOBot/1.0; +https://ralfseo.com/bot)"
+
+# Generic addresses to deprioritise
+_GENERIC_PREFIXES = frozenset({
+    "noreply", "no-reply", "mailer-daemon", "postmaster",
+    "abuse", "spam", "unsubscribe",
+})
+
+
+def _is_useless_email(email: str) -> bool:
+    """Check if an email is a no-reply or system address."""
+    prefix = email.split("@")[0].lower()
+    return prefix in _GENERIC_PREFIXES
+
+
+def _extract_domain(url: str) -> str:
+    """Extract root domain from a URL."""
+    try:
+        return urlparse(url).netloc.lower().removeprefix("www.")
+    except Exception:
+        return ""
+
+
+def _scrape_emails_from_url(url: str) -> list[str]:
+    """Fetch a URL and extract email addresses from the HTML.
+
+    Args:
+        url: The page URL to scrape.
+
+    Returns:
+        List of unique email addresses found.
+    """
+    try:
+        resp = httpx.get(
+            url,
+            follow_redirects=True,
+            timeout=_FETCH_TIMEOUT,
+            headers={"User-Agent": _USER_AGENT},
+        )
+        if resp.status_code >= 400:
+            return []
+        emails = _EMAIL_REGEX.findall(resp.text)
+        # Deduplicate and filter useless addresses
+        seen: set[str] = set()
+        clean: list[str] = []
+        for e in emails:
+            lower = e.lower()
+            if lower not in seen and not _is_useless_email(lower):
+                seen.add(lower)
+                clean.append(e)
+        return clean
+    except Exception:
+        return []
+
+
+def _crawl_contact_pages(domain: str) -> dict[str, Any]:
+    """Crawl common contact pages on a domain for email addresses.
+
+    Tries /contact, /about, /write-for-us, /advertise in order.
+
+    Args:
+        domain: The target domain (e.g. ``realhomes.com``).
+
+    Returns:
+        Dict with ``email``, ``source_path``, and ``all_emails`` fields.
+    """
+    base_url = f"https://{domain}"
+    all_emails: list[str] = []
+    source_path = ""
+
+    for path in _CONTACT_PATHS:
+        url = f"{base_url}{path}"
+        emails = _scrape_emails_from_url(url)
+        if emails:
+            all_emails.extend(emails)
+            if not source_path:
+                source_path = path
+
+    # Deduplicate preserving order
+    seen: set[str] = set()
+    unique: list[str] = []
+    for e in all_emails:
+        if e.lower() not in seen:
+            seen.add(e.lower())
+            unique.append(e)
+
+    return {
+        "email": unique[0] if unique else "",
+        "source_path": source_path,
+        "all_emails": unique,
+    }
+
+
+def _discover_contact(
+    domain: str,
+    page_url: str,
+    author_name: str,
+    *,
+    weekly_spend: float,
+    site: str,
+) -> dict[str, Any]:
+    """Multi-source contact discovery pipeline.
+
+    Tries four strategies in order of reliability:
+    1. Scrape emails from the article page itself.
+    2. Crawl /contact, /about, /write-for-us pages.
+    3. Hunter.io lookup (domain search + email finder).
+    4. LLM-based extraction as fallback.
+
+    Args:
+        domain: The prospect domain.
+        page_url: The prospect page URL.
+        author_name: Author name if known from prior extraction.
+        weekly_spend: Current weekly LLM spend in USD.
+        site: Target site name for cost logging.
+
+    Returns:
+        Dict with ``email``, ``author_name``, ``contact_source``,
+        ``confidence``, and ``cost_usd`` fields.
+    """
+    result: dict[str, Any] = {
+        "email": "",
+        "author_name": author_name,
+        "contact_source": "",
+        "confidence": "low",
+        "cost_usd": 0.0,
+    }
+
+    # Strategy 1: scrape the article page itself
+    article_emails = _scrape_emails_from_url(page_url)
+    if article_emails:
+        result["email"] = article_emails[0]
+        result["contact_source"] = "article_page"
+        result["confidence"] = "medium"
+        logger.debug("Found email on article page %s: %s", page_url, article_emails[0])
+        return result
+
+    # Strategy 2: crawl contact pages
+    contact_result = _crawl_contact_pages(domain)
+    if contact_result["email"]:
+        result["email"] = contact_result["email"]
+        result["contact_source"] = f"contact_page:{contact_result['source_path']}"
+        result["confidence"] = "medium"
+        logger.debug("Found email on contact page for %s: %s", domain, contact_result["email"])
+        return result
+
+    # Strategy 3: Hunter.io
+    try:
+        from agents.seo_agent.tools.hunter_tools import get_best_contact
+
+        hunter_result = get_best_contact(domain, author_name)
+        if hunter_result.get("email") and hunter_result.get("confidence", 0) >= 30:
+            result["email"] = hunter_result["email"]
+            result["contact_source"] = hunter_result.get("source", "hunter")
+            result["confidence"] = "high" if hunter_result["confidence"] >= 70 else "medium"
+            if hunter_result.get("name"):
+                result["author_name"] = hunter_result["name"]
+            logger.debug("Found email via Hunter.io for %s: %s", domain, hunter_result["email"])
+            return result
+    except Exception:
+        logger.debug("Hunter.io lookup failed for %s", domain, exc_info=True)
+
+    # Strategy 4: LLM extraction fallback
+    try:
+        contact_resp = _extract_contact(
+            domain, page_url, weekly_spend=weekly_spend, site=site,
+        )
+        contact_data = _parse_contact_response(contact_resp["text"])
+        result["cost_usd"] = contact_resp.get("cost_usd", 0.0)
+        if contact_data.get("email_pattern"):
+            result["email"] = contact_data["email_pattern"]
+            result["contact_source"] = "llm_guess"
+            result["confidence"] = contact_data.get("confidence", "low")
+        if contact_data.get("author_name") and contact_data["author_name"] != "unknown":
+            result["author_name"] = contact_data["author_name"]
+    except Exception:
+        logger.debug("LLM contact extraction failed for %s", domain, exc_info=True)
+
+    return result
 
 
 def _summarise_page(
@@ -200,24 +397,26 @@ def run_prospect_enrichment(state: SEOAgentState) -> dict[str, Any]:
             errors.append(msg)
             enrichment["page_summary"] = ""
 
-        # Extract contact email pattern
+        # Discover contact email via multi-source pipeline
         try:
-            contact_resp = _extract_contact(
+            contact_result = _discover_contact(
                 domain,
                 page_url,
+                prospect.get("author_name", ""),
                 weekly_spend=weekly_spend,
                 site=target_site,
             )
-            contact_data = _parse_contact_response(contact_resp["text"])
-            enrichment["contact_email"] = contact_data["email_pattern"]
-            enrichment["author_name"] = contact_data["author_name"]
-            weekly_spend += contact_resp.get("cost_usd", 0.0)
+            enrichment["contact_email"] = contact_result["email"]
+            enrichment["author_name"] = contact_result["author_name"]
+            enrichment["contact_source"] = contact_result["contact_source"]
+            weekly_spend += contact_result.get("cost_usd", 0.0)
         except Exception:
-            msg = f"Failed to extract contact for {domain}"
+            msg = f"Failed to discover contact for {domain}"
             logger.warning(msg, exc_info=True)
             errors.append(msg)
             enrichment["contact_email"] = ""
             enrichment["author_name"] = ""
+            enrichment["contact_source"] = ""
 
         # Fetch DR from Ahrefs if not already known
         existing_dr = prospect.get("dr", 0)
