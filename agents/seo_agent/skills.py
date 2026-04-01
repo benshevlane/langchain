@@ -170,7 +170,16 @@ def has_unscored_prospects(dashboard: dict, buffer: Any) -> tuple[bool, str]:
 def content_below_target(dashboard: dict, buffer: Any) -> tuple[bool, str]:
     """Fire when content count is below the target threshold."""
     count = dashboard.get("content_pieces", 0)
-    target = 30  # configurable via buffer
+    target = 30
+    # Read from runtime strategy config, then buffer override
+    try:
+        from agents.seo_agent.strategy_config import get_config
+
+        cfg_target = get_config("content_target")
+        if cfg_target:
+            target = int(cfg_target)
+    except Exception:
+        pass
     override = buffer.get("content_target")
     if override:
         target = int(override)
