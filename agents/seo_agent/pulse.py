@@ -243,6 +243,25 @@ async def _execute_pulse_inner() -> dict[str, Any]:
     except Exception:
         pass
 
+    # --- 8. Goal progress ---
+    try:
+        from agents.seo_agent.goal_tracker import get_goal_gaps, measure_goals_from_dashboard
+
+        measure_goals_from_dashboard()
+        gaps = get_goal_gaps()
+        critical_goals = [g for g in gaps if g["priority"] in ("critical", "behind")]
+        if critical_goals:
+            goal_lines = ["Goals needing attention:"]
+            for g in critical_goals[:3]:
+                pct = g.get("pct_complete", 0)
+                goal_lines.append(
+                    f"  {g['description']}: {g['current']:.0f} / "
+                    f"{g['target_3m']} ({pct:.0f}%)"
+                )
+            sections.append("\n".join(goal_lines))
+    except Exception:
+        logger.debug("Goal tracking unavailable for pulse", exc_info=True)
+
     # Build and send the pulse message
     if not alerts and not sections:
         logger.info("Pulse: nothing to report")

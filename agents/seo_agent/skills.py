@@ -456,6 +456,14 @@ class SkillRegistry:
         except Exception:
             schedule_boosts = {}
 
+        # Load goal-gap boosts (skills serving behind/critical goals get priority)
+        try:
+            from agents.seo_agent.goal_tracker import get_goal_skill_boosts
+
+            goal_boosts: dict[str, int] = get_goal_skill_boosts()
+        except Exception:
+            goal_boosts = {}
+
         actionable: list[tuple[Skill, str, int]] = []
 
         for skill in self._skills.values():
@@ -484,6 +492,11 @@ class SkillRegistry:
                 schedule_boost = schedule_boosts.get(skill.name, 0)
                 if schedule_boost:
                     priority += schedule_boost
+
+                # Goal-gap boost (skills that close the biggest gaps get priority)
+                goal_boost = goal_boosts.get(skill.name, 0)
+                if goal_boost:
+                    priority += goal_boost
 
                 actionable.append((skill, reason, priority))
 

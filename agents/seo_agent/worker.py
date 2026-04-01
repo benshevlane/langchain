@@ -78,6 +78,17 @@ async def _execute_worker_inner() -> dict[str, Any]:
         logger.error("Dashboard unavailable: %s", e)
         return {"status": "dashboard_error", "error": str(e)}
 
+    # Sync and measure goals against current dashboard state
+    try:
+        from agents.seo_agent.goal_tracker import measure_goals_from_dashboard, sync_goals
+
+        sync_goals()
+        measured = measure_goals_from_dashboard()
+        if measured:
+            logger.info("Goal progress measured: %s", measured)
+    except Exception:
+        logger.debug("Goal tracking unavailable (non-fatal)", exc_info=True)
+
     # Reference today's schedule
     from agents.seo_agent.strategy import get_todays_schedule
 
@@ -88,7 +99,7 @@ async def _execute_worker_inner() -> dict[str, Any]:
         list(schedule["boost_skills"].keys()),
     )
 
-    # Evaluate skills (schedule boosts applied inside evaluate)
+    # Evaluate skills (schedule boosts + goal-gap boosts applied inside evaluate)
     registry = SkillRegistry()
     actionable = registry.evaluate(dashboard, ctx.buffer, budget_remaining=ctx.budget_remaining)
 
