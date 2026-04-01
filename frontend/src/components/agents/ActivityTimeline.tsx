@@ -1,9 +1,26 @@
-import { CheckCircle2, XCircle, Clock } from 'lucide-react'
+import { useMemo } from 'react'
+import { CheckCircle2, XCircle, Clock, RefreshCw, Zap } from 'lucide-react'
 import { useSupabase } from '../../hooks/useSupabase'
-import { Card } from '../ui/Card'
+import { Card, CardHeader, CardTitle } from '../ui/Card'
 import { Badge } from '../ui/Badge'
-import { Spinner } from '../ui/Spinner'
-import type { ScheduleLogEntry } from '../../types/database'
+import { Button } from '../ui/Button'
+import { SkeletonList } from '../ui/Skeleton'
+import type { ScheduleLogEntry, AgentTurn } from '../../types/database'
+
+interface Props {
+  agentName: string
+}
+
+interface UnifiedEntry {
+  id: string
+  timestamp: string
+  action: string
+  agent: string
+  status: 'success' | 'error' | 'pending'
+  detail: string | null
+  source: 'schedule' | 'turn'
+  cost: string | null
+}
 
 function formatTime(iso: string): string {
   return new Date(iso).toLocaleString(undefined, {
@@ -22,83 +39,152 @@ function formatSkill(name: string): string {
 }
 
 const statusIcon = {
-  done: <CheckCircle2 size={16} className="text-emerald-500" />,
-  failed: <XCircle size={16} className="text-red-500" />,
+  success: <CheckCircle2 size={16} className="text-emerald-500" />,
+  error: <XCircle size={16} className="text-red-500" />,
+  pending: <Clock size={16} className="text-[var(--color-text-muted)]" />,
 }
 
-export function ActivityTimeline() {
-  const { data, loading, error } = useSupabase<ScheduleLogEntry>({
+const statusBadge = {
+  success: 'success' as const,
+  error: 'danger' as const,
+  pending: 'neutral' as const,
+}
+
+export function ActivityTimeline({ agentName }: Props) {
+  const { data: scheduleData, loading: loadingSchedule, refetch: refetchSchedule } = useSupabase<ScheduleLogEntry>({
     table: 'ralf_schedule_log',
     order: { column: 'created_at', ascending: false },
-    limit: 30,
+    limit: 50,
   })
 
-  if (loading) return <Spinner />
-  if (error) return <p className="text-sm text-[var(--color-danger)]">{error}</p>
+  const { data: turnData, loading: loadingTurns, refetch: refetchTurns } = useSupabase<AgentTurn>({
+    table: 'agent_turns',
+    order: { column: 'created_at', ascending: false },
+    limit: 50,
+    filters: { agent_name: agentName },
+    realtime: true,
+  })
 
-  if (data.length === 0) {
-    return (
-      <Card>
-        <h3 className="mb-3 font-semibold">Recent Activity</h3>
-        <p className="text-sm text-[var(--color-text-muted)]">No activity logged yet.</p>
-      </Card>
-    )
+  const loading = loadingSchedule || loadingTurns
+
+  const entries = useMemo(() => {
+    const unified: UnifiedEntry[] = []
+
+    for (const s of scheduleData) {
+      unified.push({
+        id: `sched-${s.id}`,
+        timestamp: s.completed_at ?? s.created_at,
+        action: formatSkill(s.skill),
+        agent: agentName,
+        status: s.status === 'done' ? 'success' : s.status === 'failed' ? 'error' : 'pending',
+        detail: s.summary ?? null,
+        source: 'schedule',
+        cost: null,
+      })
+    }
+
+    for (const t of turnData) {
+      unified.push({
+        id: `turn-${t.id}`,
+        timestamp: t.created_at,
+        action: `${t.turn_type} turn`,
+        agent: t.agent_name,
+        status: 'success',
+        detail: t.input?.slice(0, 120) ?? null,
+        source: 'turn',
+        cost: t.tokens_used > 0 ? `${t.tokens_used.toLocaleString()} tokens` : null,
+      })
+    }
+
+    unified.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+    return unified.slice(0, 50)
+  }, [scheduleData, turnData, agentName])
+
+  const handleRefresh = () => {
+    refetchSchedule()
+    refetchTurns()
   }
 
   // Group by date
-  const byDate: Record<string, ScheduleLogEntry[]> = {}
-  for (const entry of data) {
-    const date = entry.schedule_date ?? entry.created_at.slice(0, 10)
-    if (!byDate[date]) byDate[date] = []
-    byDate[date].push(entry)
-  }
+  const byDate = useMemo(() => {
+    const groups: Record<string, UnifiedEntry[]> = {}
+    for (const entry of entries) {
+      const date = entry.timestamp.slice(0, 10)
+      if (!groups[date]) groups[date] = []
+      groups[date].push(entry)
+    }
+    return groups
+  }, [entries])
 
   return (
     <Card>
-      <h3 className="mb-4 font-semibold">Recent Activity</h3>
-      <div className="space-y-4">
-        {Object.entries(byDate).map(([date, entries]) => (
-          <div key={date}>
-            <p className="mb-2 text-xs font-medium text-[var(--color-text-muted)]">
-              {new Date(date + 'T00:00:00').toLocaleDateString(undefined, {
-                weekday: 'short',
-                month: 'short',
-                day: 'numeric',
-              })}
-            </p>
-            <div className="space-y-1.5">
-              {entries.map((entry) => (
-                <div
-                  key={entry.id}
-                  className="flex items-start gap-2.5 rounded-lg px-2 py-1.5 text-sm transition-colors hover:bg-[var(--color-surface-hover)]"
-                >
-                  <div className="mt-0.5">
-                    {statusIcon[entry.status as keyof typeof statusIcon] ?? (
-                      <Clock size={16} className="text-[var(--color-text-muted)]" />
-                    )}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <span className="font-medium">{formatSkill(entry.skill)}</span>
-                      {entry.site && (
-                        <Badge variant="neutral">{entry.site}</Badge>
+      <CardHeader className="flex flex-row items-center justify-between">
+        <CardTitle>Activity</CardTitle>
+        <Button variant="ghost" size="sm" onClick={handleRefresh}>
+          <RefreshCw size={14} className="mr-1.5" />
+          Refresh
+        </Button>
+      </CardHeader>
+
+      {loading ? (
+        <SkeletonList rows={6} />
+      ) : entries.length === 0 ? (
+        <div className="flex flex-col items-center gap-2 py-8">
+          <Clock size={32} className="text-[var(--color-text-muted)]" />
+          <p className="text-sm text-[var(--color-text-muted)]">No activity recorded yet for this agent.</p>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {Object.entries(byDate).map(([date, items]) => (
+            <div key={date}>
+              <p className="mb-2 text-xs font-medium text-[var(--color-text-muted)]">
+                {new Date(date + 'T00:00:00').toLocaleDateString(undefined, {
+                  weekday: 'short',
+                  month: 'short',
+                  day: 'numeric',
+                })}
+              </p>
+              <div className="space-y-1.5">
+                {items.map((entry) => (
+                  <div
+                    key={entry.id}
+                    className="flex items-start gap-2.5 rounded-lg px-2 py-1.5 text-sm transition-colors hover:bg-[var(--color-surface-hover)]"
+                  >
+                    <div className="mt-0.5">
+                      {statusIcon[entry.status]}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium">{entry.action}</span>
+                        <Badge variant={statusBadge[entry.status]}>
+                          {entry.status}
+                        </Badge>
+                        <Badge variant="neutral">{entry.source}</Badge>
+                      </div>
+                      {entry.detail && (
+                        <p className="mt-0.5 truncate text-xs text-[var(--color-text-muted)]">
+                          {entry.detail}
+                        </p>
                       )}
                     </div>
-                    {entry.summary && (
-                      <p className="mt-0.5 truncate text-xs text-[var(--color-text-muted)]">
-                        {entry.summary}
-                      </p>
-                    )}
+                    <div className="flex shrink-0 flex-col items-end gap-0.5">
+                      <span className="text-xs text-[var(--color-text-muted)]">
+                        {formatTime(entry.timestamp)}
+                      </span>
+                      {entry.cost && (
+                        <span className="flex items-center gap-0.5 text-xs text-amber-400">
+                          <Zap size={10} />
+                          {entry.cost}
+                        </span>
+                      )}
+                    </div>
                   </div>
-                  <span className="shrink-0 text-xs text-[var(--color-text-muted)]">
-                    {formatTime(entry.completed_at ?? entry.created_at)}
-                  </span>
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
     </Card>
   )
 }
