@@ -55,7 +55,8 @@ def search_companies(query: str, country: str = "US", limit: int = 20) -> list[d
     if not api_key:
         logger.error(
             "TAVILY_API_KEY is not set — cannot search for companies. "
-            "Set this environment variable to enable web search."
+            "Ensure this env var is set on ALL Railway services that invoke the scraper "
+            "(both the scraper agent and the SEO agent)."
         )
         return []
 
@@ -239,7 +240,11 @@ def run_scraper(
     # Check API key before doing any work
     tavily_key = os.environ.get("TAVILY_API_KEY", "").strip()
     if not tavily_key:
-        msg = "TAVILY_API_KEY is not set — cannot search for companies"
+        msg = (
+            "TAVILY_API_KEY is not set — cannot search for companies. "
+            "Ensure this env var is set on the Railway service running this code "
+            "(check both SEO agent and scraper agent services)."
+        )
         logger.error(msg)
         return {
             "error": msg,
