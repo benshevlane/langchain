@@ -30,3 +30,8 @@ CREATE POLICY "anon_read_access" ON backlink_target_config
     FOR SELECT
     TO anon
     USING (true);
+
+-- Add unique constraint on seo_backlink_prospects to support upsert on
+-- re-discovery (avoids duplicate rows and preserves existing status/score).
+CREATE UNIQUE INDEX IF NOT EXISTS idx_backlink_prospects_url_site
+    ON seo_backlink_prospects (page_url, target_site);

@@ -746,35 +746,61 @@ def run_backlink_prospector(state: SEOAgentState) -> dict[str, Any]:
     )
 
     # ------------------------------------------------------------------
-    # Batch DR enrichment — fetch real Ahrefs DR for every unique domain
-    # that doesn't already have it, so displayed DR is always accurate.
+    # Batch DR enrichment — reuse cached DR from Supabase first, then
+    # call Ahrefs API only for domains we haven't seen before.
     # ------------------------------------------------------------------
     from agents.seo_agent.tools.ahrefs_tools import get_domain_rating
 
+    # Build a cache of known DR values from existing prospects in Supabase
+    dr_cache: dict[str, float] = {}
+    existing: list[dict[str, Any]] = []
+    try:
+        existing = supabase_tools.query_table(
+            "seo_backlink_prospects",
+            filters={"target_site": target_site},
+            limit=500,
+        )
+        for row in existing:
+            dom = row.get("domain", "")
+            dr_val = row.get("dr", 0)
+            if dom and dr_val and dr_val > 0:
+                dr_cache[dom] = dr_val
+        if dr_cache:
+            logger.info("Loaded cached DR for %d domains from Supabase", len(dr_cache))
+    except Exception:
+        logger.debug("Could not load existing prospects for DR cache", exc_info=True)
+
+    # Apply cached DR to current prospects
+    for p in unique_prospects:
+        dom = p.get("domain", "")
+        if not p.get("dr") and dom in dr_cache:
+            p["dr"] = dr_cache[dom]
+
+    # Fetch from Ahrefs API only for domains still missing DR
     domains_needing_dr = {
         p.get("domain", "")
         for p in unique_prospects
         if not p.get("dr") and p.get("domain")
     }
-    dr_cache: dict[str, float] = {}
-    for dom in domains_needing_dr:
-        try:
-            dr_data = get_domain_rating.invoke(dom)
-            if isinstance(dr_data, dict):
-                dr_cache[dom] = dr_data.get("domain_rating", 0)
-            elif isinstance(dr_data, (int, float)):
-                dr_cache[dom] = float(dr_data)
-        except Exception:
-            logger.debug("DR fetch failed for %s", dom, exc_info=True)
+    if domains_needing_dr:
+        logger.info("Fetching DR from Ahrefs for %d new domains", len(domains_needing_dr))
+        for dom in domains_needing_dr:
+            try:
+                dr_data = get_domain_rating.invoke(dom)
+                if isinstance(dr_data, dict):
+                    dr_cache[dom] = dr_data.get("domain_rating", 0)
+                elif isinstance(dr_data, (int, float)):
+                    dr_cache[dom] = float(dr_data)
+            except Exception:
+                logger.debug("DR fetch failed for %s", dom, exc_info=True)
 
-    if dr_cache:
+        # Apply newly fetched DR
         for p in unique_prospects:
             dom = p.get("domain", "")
             if not p.get("dr") and dom in dr_cache:
                 p["dr"] = dr_cache[dom]
         logger.info(
-            "Enriched DR for %d/%d domains",
-            len(dr_cache), len(domains_needing_dr),
+            "DR enrichment complete: %d domains in cache", len(dr_cache),
         )
 
     # Apply min_dr filter
@@ -810,7 +836,11 @@ def run_backlink_prospector(state: SEOAgentState) -> dict[str, Any]:
             method_counts[method] += 1
     unique_prospects = capped_prospects
 
-    # Save each prospect to Supabase
+    # Save each prospect to Supabase (upsert to avoid duplicates)
+    existing_urls: set[str] = {
+        row.get("page_url", "") for row in existing if row.get("page_url")
+    }
+
     saved_prospects: list[dict[str, Any]] = []
     for prospect in unique_prospects:
         record = {
@@ -823,9 +853,13 @@ def run_backlink_prospector(state: SEOAgentState) -> dict[str, Any]:
             "segment": prospect.get("segment", ""),
             "links_to_competitor": prospect.get("links_to_competitor", False),
             "competitor_names": prospect.get("competitor_names", []),
-            "status": "new",
             "target_site": target_site,
         }
+        # Only set status to "new" for genuinely new prospects — don't
+        # overwrite status on re-discovery of an already-processed prospect.
+        page_url = prospect.get("page_url", "")
+        if page_url not in existing_urls:
+            record["status"] = "new"
         # Include broken link context if available (Wayback enrichment)
         if prospect.get("dead_url"):
             record["dead_url"] = prospect["dead_url"]
@@ -841,8 +875,10 @@ def run_backlink_prospector(state: SEOAgentState) -> dict[str, Any]:
         if prospect.get("already_lists_us") is not None:
             record["already_lists_us"] = prospect["already_lists_us"]
         try:
-            saved = supabase_tools.insert_record(
-                "seo_backlink_prospects", record
+            saved = supabase_tools.upsert_record(
+                "seo_backlink_prospects",
+                record,
+                on_conflict="page_url,target_site",
             )
             saved_prospects.append(saved)
         except Exception:
