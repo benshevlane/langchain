@@ -33,5 +33,12 @@ CREATE POLICY "anon_read_access" ON backlink_target_config
 
 -- Add unique constraint on seo_backlink_prospects to support upsert on
 -- re-discovery (avoids duplicate rows and preserves existing status/score).
+-- First deduplicate any existing rows, keeping the most recent per URL+site.
+DELETE FROM seo_backlink_prospects a
+    USING seo_backlink_prospects b
+    WHERE a.page_url = b.page_url
+      AND a.target_site = b.target_site
+      AND a.created_at < b.created_at;
+
 CREATE UNIQUE INDEX IF NOT EXISTS idx_backlink_prospects_url_site
     ON seo_backlink_prospects (page_url, target_site);
