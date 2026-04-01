@@ -2132,6 +2132,7 @@ async def handle_natural_language(update: Update, context: ContextTypes.DEFAULT_
                         )
                         total = result.get("total_added", 0)
                         lines = [f"Full scrape complete — {total} companies added to CRM:\n"]
+                        errors = []
                         for key, data in result.items():
                             if key == "total_added":
                                 continue
@@ -2139,6 +2140,12 @@ async def handle_natural_language(update: Update, context: ContextTypes.DEFAULT_
                                 added = data.get("added_to_crm", 0)
                                 found = data.get("urls_found", 0)
                                 lines.append(f"  {key}: {added} added (from {found} found)")
+                                if data.get("error"):
+                                    errors.append(data["error"])
+                        if total == 0 and errors:
+                            # Deduplicate error messages
+                            unique_errors = list(dict.fromkeys(errors))
+                            lines.append(f"\nErrors: {'; '.join(unique_errors)}")
                         await update.message.reply_text("\n".join(lines))
                         history.append({"role": "assistant", "content": f"Full scrape: {total} companies added"})
                     except Exception as e:
