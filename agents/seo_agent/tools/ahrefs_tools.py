@@ -428,7 +428,12 @@ def get_domain_rating(target: str) -> dict[str, Any]:
         Dict with domain_rating and ahrefs_rank.
     """
     if _is_mock():
-        return {"domain_rating": 0.0, "ahrefs_rank": None}
+        # Deterministic but realistic DR based on domain name hash
+        import hashlib
+
+        h = int(hashlib.md5(target.encode()).hexdigest()[:8], 16)  # noqa: S324
+        dr = 15 + (h % 76)  # Range: 15-90
+        return {"domain_rating": float(dr), "ahrefs_rank": 100000 - (dr * 1000)}
     from datetime import date
     client = _get_client()
     return client.get(

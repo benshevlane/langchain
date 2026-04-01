@@ -199,3 +199,16 @@ export interface AgentScheduleConfig {
   created_at: string
   updated_at: string
 }
+
+export interface BacklinkTargetConfig {
+  id: string
+  target_site: string
+  min_dr: number
+  enabled_methods: string[]
+  excluded_domains: string[]
+  max_prospects_per_method: number
+  active: boolean
+  notes: string
+  created_at: string
+  updated_at: string
+}

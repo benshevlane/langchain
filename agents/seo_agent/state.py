@@ -25,3 +25,8 @@ class SEOAgentState(TypedDict):
     errors: list[str]
     llm_spend_this_week: float
     next_node: str
+    # Backlink prospector config (loaded from Supabase at runtime)
+    backlink_min_dr: int
+    backlink_enabled_methods: list[str]
+    backlink_excluded_domains: list[str]
+    backlink_max_per_method: int

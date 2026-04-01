@@ -10,6 +10,7 @@ tags. Broken link prospects are enriched with Wayback Machine context.
 from __future__ import annotations
 
 import logging
+from collections import Counter
 from typing import Any
 from urllib.parse import urlparse
 
@@ -566,62 +567,113 @@ def run_backlink_prospector(state: SEOAgentState) -> dict[str, Any]:
     # Extract a simple niche word from the primary topic for resource search
     niche = primary_topic.split()[0] if primary_topic else "kitchen"
 
+    # ------------------------------------------------------------------
+    # Load backlink target config from Supabase (falls back to state,
+    # then to permissive defaults so existing behaviour is preserved).
+    # ------------------------------------------------------------------
+    _ALL_METHODS = [
+        "competitor_backlink", "content_explorer", "unlinked_mention",
+        "resource_page", "broken_link", "haro", "niche_blog_search",
+        "company_search", "roundup_search",
+    ]
+    try:
+        _bl_configs = supabase_tools.query_table(
+            "backlink_target_config",
+            filters={"target_site": target_site},
+            limit=1,
+        )
+        _bl_config: dict[str, Any] = _bl_configs[0] if _bl_configs else {}
+    except Exception:
+        logger.debug(
+            "Could not load backlink_target_config for %s, using defaults",
+            target_site,
+            exc_info=True,
+        )
+        _bl_config = {}
+
+    min_dr: int = _bl_config.get(
+        "min_dr", state.get("backlink_min_dr", 0)
+    )
+    enabled_methods: list[str] = _bl_config.get(
+        "enabled_methods", state.get("backlink_enabled_methods", _ALL_METHODS)
+    )
+    excluded_domains: set[str] = set(
+        _bl_config.get(
+            "excluded_domains",
+            state.get("backlink_excluded_domains", []),
+        )
+    )
+    max_per_method: int = _bl_config.get(
+        "max_prospects_per_method",
+        state.get("backlink_max_per_method", 50),
+    )
+
+    logger.info(
+        "Backlink config for %s: min_dr=%d, methods=%s, excluded=%d domains",
+        target_site, min_dr, enabled_methods, len(excluded_domains),
+    )
+
     all_prospects: list[dict[str, Any]] = []
 
     # 1. Competitor Backlink Mining
-    logger.info("Step 1/8: Mining competitor backlinks for %s", target_site)
-    try:
-        competitor_prospects = _mine_competitor_backlinks(competitors)
-        all_prospects.extend(competitor_prospects)
-        logger.info("Found %d competitor backlink prospects", len(competitor_prospects))
-    except Exception as exc:
-        msg = f"Competitor backlink mining failed: {exc}"
-        logger.error(msg, exc_info=True)
-        errors.append(msg)
+    if "competitor_backlink" in enabled_methods:
+        logger.info("Step 1/9: Mining competitor backlinks for %s", target_site)
+        try:
+            competitor_prospects = _mine_competitor_backlinks(competitors)
+            all_prospects.extend(competitor_prospects)
+            logger.info("Found %d competitor backlink prospects", len(competitor_prospects))
+        except Exception as exc:
+            msg = f"Competitor backlink mining failed: {exc}"
+            logger.error(msg, exc_info=True)
+            errors.append(msg)
 
     # 2. Content Explorer
-    logger.info("Step 2/8: Searching content explorer for %s", target_site)
-    try:
-        content_prospects = _explore_content(target_site)
-        all_prospects.extend(content_prospects)
-        logger.info("Found %d content explorer prospects", len(content_prospects))
-    except Exception as exc:
-        msg = f"Content explorer search failed: {exc}"
-        logger.error(msg, exc_info=True)
-        errors.append(msg)
+    if "content_explorer" in enabled_methods:
+        logger.info("Step 2/9: Searching content explorer for %s", target_site)
+        try:
+            content_prospects = _explore_content(target_site)
+            all_prospects.extend(content_prospects)
+            logger.info("Found %d content explorer prospects", len(content_prospects))
+        except Exception as exc:
+            msg = f"Content explorer search failed: {exc}"
+            logger.error(msg, exc_info=True)
+            errors.append(msg)
 
     # 3. Unlinked Mentions
-    logger.info("Step 3/8: Finding unlinked mentions for %s", domain)
-    try:
-        mention_prospects = _find_unlinked_mentions(domain)
-        all_prospects.extend(mention_prospects)
-        logger.info("Found %d unlinked mention prospects", len(mention_prospects))
-    except Exception as exc:
-        msg = f"Unlinked mentions search failed: {exc}"
-        logger.error(msg, exc_info=True)
-        errors.append(msg)
+    if "unlinked_mention" in enabled_methods:
+        logger.info("Step 3/9: Finding unlinked mentions for %s", domain)
+        try:
+            mention_prospects = _find_unlinked_mentions(domain)
+            all_prospects.extend(mention_prospects)
+            logger.info("Found %d unlinked mention prospects", len(mention_prospects))
+        except Exception as exc:
+            msg = f"Unlinked mentions search failed: {exc}"
+            logger.error(msg, exc_info=True)
+            errors.append(msg)
 
     # 4. Resource Pages
-    logger.info("Step 4/8: Searching resource pages for niche '%s'", niche)
-    try:
-        resource_prospects = _find_resource_pages(niche)
-        all_prospects.extend(resource_prospects)
-        logger.info("Found %d resource page prospects", len(resource_prospects))
-    except Exception as exc:
-        msg = f"Resource page search failed: {exc}"
-        logger.error(msg, exc_info=True)
-        errors.append(msg)
+    if "resource_page" in enabled_methods:
+        logger.info("Step 4/9: Searching resource pages for niche '%s'", niche)
+        try:
+            resource_prospects = _find_resource_pages(niche)
+            all_prospects.extend(resource_prospects)
+            logger.info("Found %d resource page prospects", len(resource_prospects))
+        except Exception as exc:
+            msg = f"Resource page search failed: {exc}"
+            logger.error(msg, exc_info=True)
+            errors.append(msg)
 
     # 5. Broken Links
-    logger.info("Step 5/8: Checking broken links for competitors")
-    try:
-        broken_prospects = _find_broken_links(competitors)
-        all_prospects.extend(broken_prospects)
-        logger.info("Found %d broken link prospects", len(broken_prospects))
-    except Exception as exc:
-        msg = f"Broken link search failed: {exc}"
-        logger.error(msg, exc_info=True)
-        errors.append(msg)
+    if "broken_link" in enabled_methods:
+        logger.info("Step 5/9: Checking broken links for competitors")
+        try:
+            broken_prospects = _find_broken_links(competitors)
+            all_prospects.extend(broken_prospects)
+            logger.info("Found %d broken link prospects", len(broken_prospects))
+        except Exception as exc:
+            msg = f"Broken link search failed: {exc}"
+            logger.error(msg, exc_info=True)
+            errors.append(msg)
 
     # 5b. Enrich broken link prospects with Wayback Machine context
     broken_with_dead_urls = [
@@ -661,49 +713,53 @@ def run_backlink_prospector(state: SEOAgentState) -> dict[str, Any]:
             logger.warning("wayback_tools not available, skipping Wayback enrichment")
 
     # 6. HARO Requests
-    logger.info("Step 6/9: Searching HARO requests")
-    try:
-        haro_prospects = _search_haro()
-        all_prospects.extend(haro_prospects)
-        logger.info("Found %d HARO prospects", len(haro_prospects))
-    except Exception as exc:
-        msg = f"HARO search failed: {exc}"
-        logger.error(msg, exc_info=True)
-        errors.append(msg)
+    if "haro" in enabled_methods:
+        logger.info("Step 6/9: Searching HARO requests")
+        try:
+            haro_prospects = _search_haro()
+            all_prospects.extend(haro_prospects)
+            logger.info("Found %d HARO prospects", len(haro_prospects))
+        except Exception as exc:
+            msg = f"HARO search failed: {exc}"
+            logger.error(msg, exc_info=True)
+            errors.append(msg)
 
     # 7. Blogger Discovery (web search)
-    logger.info("Step 7/9: Searching for niche bloggers relevant to %s", target_site)
-    try:
-        blog_prospects = _discover_bloggers(target_site)
-        all_prospects.extend(blog_prospects)
-        logger.info("Found %d blogger prospects", len(blog_prospects))
-    except Exception as exc:
-        msg = f"Blogger discovery failed: {exc}"
-        logger.error(msg, exc_info=True)
-        errors.append(msg)
+    if "niche_blog_search" in enabled_methods:
+        logger.info("Step 7/9: Searching for niche bloggers relevant to %s", target_site)
+        try:
+            blog_prospects = _discover_bloggers(target_site)
+            all_prospects.extend(blog_prospects)
+            logger.info("Found %d blogger prospects", len(blog_prospects))
+        except Exception as exc:
+            msg = f"Blogger discovery failed: {exc}"
+            logger.error(msg, exc_info=True)
+            errors.append(msg)
 
     # 8. Company/Provider Discovery (web search)
-    logger.info("Step 8/9: Searching for kitchen/bathroom companies for partnerships")
-    try:
-        company_prospects = _discover_companies(target_site)
-        all_prospects.extend(company_prospects)
-        logger.info("Found %d company prospects", len(company_prospects))
-    except Exception as exc:
-        msg = f"Company discovery failed: {exc}"
-        logger.error(msg, exc_info=True)
-        errors.append(msg)
+    if "company_search" in enabled_methods:
+        logger.info("Step 8/9: Searching for kitchen/bathroom companies for partnerships")
+        try:
+            company_prospects = _discover_companies(target_site)
+            all_prospects.extend(company_prospects)
+            logger.info("Found %d company prospects", len(company_prospects))
+        except Exception as exc:
+            msg = f"Company discovery failed: {exc}"
+            logger.error(msg, exc_info=True)
+            errors.append(msg)
 
     # 9. Roundup/Listicle Discovery (web search)
-    keyword_cluster = state.get("keyword_cluster", [])
-    logger.info("Step 9/9: Searching for roundup/listicle pages for %s", target_site)
-    try:
-        roundup_prospects = _search_roundups(target_site, keyword_cluster or None)
-        all_prospects.extend(roundup_prospects)
-        logger.info("Found %d roundup/listicle prospects", len(roundup_prospects))
-    except Exception as exc:
-        msg = f"Roundup discovery failed: {exc}"
-        logger.error(msg, exc_info=True)
-        errors.append(msg)
+    if "roundup_search" in enabled_methods:
+        keyword_cluster = state.get("keyword_cluster", [])
+        logger.info("Step 9/9: Searching for roundup/listicle pages for %s", target_site)
+        try:
+            roundup_prospects = _search_roundups(target_site, keyword_cluster or None)
+            all_prospects.extend(roundup_prospects)
+            logger.info("Found %d roundup/listicle prospects", len(roundup_prospects))
+        except Exception as exc:
+            msg = f"Roundup discovery failed: {exc}"
+            logger.error(msg, exc_info=True)
+            errors.append(msg)
 
     # Deduplicate across all methods
     unique_prospects = _deduplicate_prospects(all_prospects)
@@ -712,6 +768,39 @@ def run_backlink_prospector(state: SEOAgentState) -> dict[str, Any]:
         len(unique_prospects),
         len(all_prospects),
     )
+
+    # Apply min_dr filter
+    if min_dr > 0:
+        pre_filter_count = len(unique_prospects)
+        unique_prospects = [
+            p for p in unique_prospects if p.get("dr", 0) >= min_dr
+        ]
+        logger.info(
+            "DR filter (min_dr=%d): %d -> %d prospects",
+            min_dr, pre_filter_count, len(unique_prospects),
+        )
+
+    # Apply excluded domains filter
+    if excluded_domains:
+        pre_filter_count = len(unique_prospects)
+        unique_prospects = [
+            p for p in unique_prospects
+            if p.get("domain", "") not in excluded_domains
+        ]
+        logger.info(
+            "Excluded domains filter: %d -> %d prospects",
+            pre_filter_count, len(unique_prospects),
+        )
+
+    # Cap results per discovery method
+    method_counts: Counter[str] = Counter()
+    capped_prospects: list[dict[str, Any]] = []
+    for p in unique_prospects:
+        method = p.get("discovery_method", "unknown")
+        if method_counts[method] < max_per_method:
+            capped_prospects.append(p)
+            method_counts[method] += 1
+    unique_prospects = capped_prospects
 
     # Save each prospect to Supabase
     saved_prospects: list[dict[str, Any]] = []
