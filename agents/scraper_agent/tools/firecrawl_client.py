@@ -51,11 +51,16 @@ def search_companies(query: str, country: str = "US", limit: int = 20) -> list[d
 
     Returns list of {url, title, description} dicts.
     """
+    api_key = os.environ.get("TAVILY_API_KEY", "").strip()
+    if not api_key:
+        logger.error(
+            "TAVILY_API_KEY is not set — cannot search for companies. "
+            "Set this environment variable to enable web search."
+        )
+        return []
+
     try:
         from tavily import TavilyClient
-        api_key = os.environ.get("TAVILY_API_KEY", "").strip()
-        if not api_key:
-            raise ValueError("TAVILY_API_KEY not set")
 
         client = TavilyClient(api_key=api_key)
 
@@ -79,7 +84,7 @@ def search_companies(query: str, country: str = "US", limit: int = 20) -> list[d
         return results
 
     except Exception as e:
-        logger.warning("Tavily search failed for '%s': %s", query, e)
+        logger.error("Tavily search failed for '%s': %s", query, e)
         return []
 
 
@@ -230,6 +235,22 @@ def run_scraper(
         Summary dict with counts.
     """
     from agents.scraper_agent.tools.crm_client import get_existing_domains, add_company
+
+    # Check API key before doing any work
+    tavily_key = os.environ.get("TAVILY_API_KEY", "").strip()
+    if not tavily_key:
+        msg = "TAVILY_API_KEY is not set — cannot search for companies"
+        logger.error(msg)
+        return {
+            "error": msg,
+            "country": country,
+            "category": category,
+            "queries_run": 0,
+            "urls_found": 0,
+            "extracted": 0,
+            "added_to_crm": 0,
+            "skipped": 0,
+        }
 
     queries = SEARCH_QUERIES.get(country, {}).get(category, [])[:max_queries]
     if not queries:
