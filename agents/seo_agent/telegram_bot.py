@@ -718,6 +718,16 @@ def _build_strategy_context() -> str:
         except Exception:
             pass
 
+        # --- Strategy config (runtime-editable parameters) ---
+        try:
+            from agents.seo_agent.strategy_config import get_prompt_context as _cfg_ctx
+
+            cfg_context = _cfg_ctx()
+            if cfg_context:
+                context += cfg_context
+        except Exception:
+            pass
+
         # --- Live blog post list ---
         try:
             from agents.seo_agent.config import SITE_PROFILES

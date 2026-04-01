@@ -89,6 +89,14 @@ async def _execute_worker_inner() -> dict[str, Any]:
     except Exception:
         logger.debug("Goal tracking unavailable (non-fatal)", exc_info=True)
 
+    # Seed strategy config defaults (idempotent)
+    try:
+        from agents.seo_agent.strategy_config import seed_defaults
+
+        seed_defaults()
+    except Exception:
+        logger.debug("Strategy config seeding unavailable (non-fatal)", exc_info=True)
+
     # Reference today's schedule
     from agents.seo_agent.strategy import get_todays_schedule
 

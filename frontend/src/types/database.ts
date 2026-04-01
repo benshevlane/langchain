@@ -162,6 +162,33 @@ export interface ScheduleLogEntry {
   created_at: string
 }
 
+export interface StrategyConfig {
+  id: string
+  key: string
+  value: string
+  category: string
+  label: string | null
+  description: string | null
+  value_type: string
+  updated_at: string
+  created_at: string
+}
+
+export interface CampaignGoal {
+  id: string
+  goal_id: string
+  description: string
+  metric: string
+  current_value: number
+  target_3m: string | null
+  target_6m: string | null
+  target_12m: string | null
+  last_measured_at: string | null
+  notes: string
+  updated_at: string
+  created_at: string
+}
+
 export interface AgentFile {
   id: string
   agent_name: string

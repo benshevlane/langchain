@@ -6,6 +6,7 @@ import { ScheduleDashboard } from './components/schedules/ScheduleDashboard'
 import { OrgChart } from './components/orgchart/OrgChart'
 import { CrmDashboard } from './components/crm/CrmDashboard'
 import { KeywordsDashboard } from './components/keywords/KeywordsDashboard'
+import { StrategyDashboard } from './components/strategy/StrategyDashboard'
 
 export default function App() {
   return (
@@ -18,6 +19,7 @@ export default function App() {
             <Route path="/org-chart" element={<OrgChart />} />
             <Route path="/crm" element={<CrmDashboard />} />
             <Route path="/keywords" element={<KeywordsDashboard />} />
+            <Route path="/strategy" element={<StrategyDashboard />} />
             <Route path="*" element={<Navigate to="/agents" replace />} />
           </Route>
         </Routes>
