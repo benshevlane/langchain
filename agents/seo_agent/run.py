@@ -282,6 +282,57 @@ def check_replies() -> None:
 
 
 @cli.command()
+@click.option("--site", required=True, help="Target site key")
+def verify_links(site: str) -> None:
+    """Verify that acquired backlinks are still live."""
+    result = _run_graph("verify_links", target_site=site)
+    report = result.get("report", "")
+    if report:
+        click.echo("\n" + report)
+    else:
+        click.echo("No links to verify.")
+
+
+@cli.command()
+@click.option("--site", required=True, help="Target site key")
+@click.option(
+    "--proposition",
+    default=None,
+    help="Link-worthy angle (e.g. 'free browser-based room planner, no signup')",
+)
+@click.option(
+    "--keywords",
+    default=None,
+    help="Comma-separated keyword cluster (e.g. 'free room planner,online floor planner')",
+)
+def backlink_hunt(site: str, proposition: str | None, keywords: str | None) -> None:
+    """Run the full backlink-hunting workflow.
+
+    Chains: prospect discovery -> enrichment -> scoring -> email generation.
+    Pass --proposition and --keywords to target specific angles.
+    """
+    keyword_cluster = [k.strip() for k in keywords.split(",")] if keywords else []
+    result = _run_graph(
+        "backlink_hunt",
+        target_site=site,
+        proposition=proposition,
+        keyword_cluster=keyword_cluster,
+    )
+    report = result.get("report", "")
+    if report:
+        click.echo("\n" + report)
+
+    prospects = result.get("backlink_prospects", [])
+    emails = result.get("emails_generated", [])
+    click.echo(f"\nDiscovered {len(prospects)} prospects, generated {len(emails)} emails.")
+
+    if result.get("errors"):
+        click.echo(f"\n{len(result['errors'])} errors occurred:")
+        for err in result["errors"][:10]:
+            click.echo(f"  - {err}")
+
+
+@cli.command()
 @click.option("--url", required=True, help="URL of the page that linked to us")
 def log_link_acquired(url: str) -> None:
     """Log a backlink that has been acquired."""

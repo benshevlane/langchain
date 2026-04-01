@@ -1,9 +1,10 @@
 """Backlink prospector node — discovers link-building opportunities.
 
-Runs eight discovery methods (competitor backlink mining, content explorer,
+Runs nine discovery methods (competitor backlink mining, content explorer,
 unlinked mentions, resource pages, broken links, HARO requests, blogger
-discovery via web search, and company/provider discovery) and persists all
-prospects to Supabase with ``discovery_method`` and ``segment`` tags.
+discovery, company/provider discovery, and roundup/listicle search) and
+persists all prospects to Supabase with ``discovery_method`` and ``segment``
+tags. Broken link prospects are enriched with Wayback Machine context.
 """
 
 from __future__ import annotations
@@ -351,6 +352,125 @@ def _discover_bloggers(target_site: str) -> list[dict[str, Any]]:
     return prospects
 
 
+def _search_roundups(
+    target_site: str,
+    keyword_cluster: list[str] | None = None,
+) -> list[dict[str, Any]]:
+    """Search for roundup/listicle pages that mention competitor tools.
+
+    Generates queries like "best {kw} tools", "top {kw} software", and
+    checks results for competitor mentions. Tags prospects with
+    ``mentions_competitors`` and ``already_lists_us``.
+
+    Args:
+        target_site: The target site key from SITE_PROFILES.
+        keyword_cluster: Optional list of keywords to search. Falls back
+            to seed_keywords from the site profile.
+
+    Returns:
+        List of prospect dicts with ``discovery_method: 'roundup_search'``.
+    """
+    profile = SITE_PROFILES.get(target_site, {})
+    our_domain = profile.get("domain", "")
+    competitors = profile.get("competitors", [])
+
+    # Build keyword list from cluster or seed keywords
+    keywords = keyword_cluster or profile.get("seed_keywords", [])[:5]
+    if not keywords:
+        logger.info("No keywords for roundup search on %s", target_site)
+        return []
+
+    # Generate roundup-style search queries
+    query_templates = [
+        "best {kw} tools",
+        "top {kw} software",
+        "best free {kw}",
+        "{kw} roundup",
+        "{kw} alternatives",
+    ]
+
+    search_queries: list[str] = []
+    for kw in keywords[:3]:  # Limit to 3 keywords to manage API spend
+        for template in query_templates[:3]:  # 3 templates per keyword
+            search_queries.append(template.format(kw=kw))
+
+    prospects: list[dict[str, Any]] = []
+    seen_domains: set[str] = set()
+
+    for query in search_queries:
+        try:
+            results = web_search_tools.search(query, max_results=5)
+        except Exception:
+            logger.warning("Roundup search failed for '%s'", query, exc_info=True)
+            continue
+
+        for r in results:
+            result_url = r.get("url", "")
+            result_domain = _extract_domain(result_url)
+
+            if result_domain in seen_domains:
+                continue
+            if _is_link_farm(result_domain):
+                continue
+            if result_domain == our_domain:
+                continue
+            seen_domains.add(result_domain)
+
+            title = r.get("title", "")
+            content = r.get("content", "")
+            combined_text = f"{title} {content}".lower()
+
+            # Check if the page title/snippet looks like a listicle
+            listicle_signals = ["best", "top", "roundup", "compared", "review",
+                                "alternatives", "vs", "tools", "software"]
+            is_listicle = any(signal in combined_text for signal in listicle_signals)
+
+            if not is_listicle:
+                continue
+
+            # Check for competitor mentions
+            mentioned_competitors: list[str] = []
+            for competitor in competitors:
+                comp_name = competitor.replace(".com", "").replace(".co.uk", "")
+                if comp_name.lower() in combined_text:
+                    mentioned_competitors.append(competitor)
+
+            # Check if our site is already listed
+            already_lists_us = our_domain.lower() in combined_text
+
+            prospects.append({
+                "domain": result_domain,
+                "page_url": result_url,
+                "page_title": title,
+                "dr": 0,
+                "monthly_traffic": 0,
+                "discovery_method": "roundup_search",
+                "links_to_competitor": len(mentioned_competitors) > 0,
+                "competitor_names": mentioned_competitors,
+                "mentions_competitors": mentioned_competitors,
+                "already_lists_us": already_lists_us,
+            })
+
+    # Fetch DR for top prospects
+    from agents.seo_agent.tools.ahrefs_tools import get_domain_rating
+    for p in prospects[:10]:
+        try:
+            dr_data = get_domain_rating(p["domain"])
+            if isinstance(dr_data, dict):
+                p["dr"] = dr_data.get("domain_rating", 0)
+            elif isinstance(dr_data, (int, float)):
+                p["dr"] = dr_data
+        except Exception:
+            pass
+
+    logger.info(
+        "Roundup search found %d listicle prospects (%d mentioning competitors)",
+        len(prospects),
+        sum(1 for p in prospects if p.get("mentions_competitors")),
+    )
+    return prospects
+
+
 def _discover_companies(target_site: str) -> list[dict[str, Any]]:
     """Discover kitchen and bathroom companies for embed partnerships.
 
@@ -503,8 +623,45 @@ def run_backlink_prospector(state: SEOAgentState) -> dict[str, Any]:
         logger.error(msg, exc_info=True)
         errors.append(msg)
 
+    # 5b. Enrich broken link prospects with Wayback Machine context
+    broken_with_dead_urls = [
+        p for p in all_prospects
+        if p.get("discovery_method") == "broken_link" and p.get("dead_url")
+    ]
+    if broken_with_dead_urls:
+        logger.info(
+            "Enriching %d broken link prospects with Wayback context",
+            len(broken_with_dead_urls),
+        )
+        try:
+            from agents.seo_agent.tools.wayback_tools import summarise_dead_page
+
+            weekly_spend = state.get("llm_spend_this_week", 0.0)
+            for prospect in broken_with_dead_urls[:10]:  # Cap at 10 lookups
+                dead_url = prospect.get("dead_url", "")
+                if not dead_url:
+                    continue
+                try:
+                    wb_result = summarise_dead_page(
+                        dead_url,
+                        weekly_spend=weekly_spend,
+                        site=target_site,
+                    )
+                    if wb_result.get("found"):
+                        prospect["dead_page_topic"] = wb_result.get("dead_page_topic", "")
+                        prospect["wayback_url"] = wb_result.get("wayback_url", "")
+                        logger.debug(
+                            "Wayback context for %s: %s",
+                            dead_url,
+                            wb_result.get("dead_page_topic", "")[:80],
+                        )
+                except Exception:
+                    logger.debug("Wayback lookup failed for %s", dead_url, exc_info=True)
+        except ImportError:
+            logger.warning("wayback_tools not available, skipping Wayback enrichment")
+
     # 6. HARO Requests
-    logger.info("Step 6/8: Searching HARO requests")
+    logger.info("Step 6/9: Searching HARO requests")
     try:
         haro_prospects = _search_haro()
         all_prospects.extend(haro_prospects)
@@ -515,7 +672,7 @@ def run_backlink_prospector(state: SEOAgentState) -> dict[str, Any]:
         errors.append(msg)
 
     # 7. Blogger Discovery (web search)
-    logger.info("Step 7/8: Searching for niche bloggers relevant to %s", target_site)
+    logger.info("Step 7/9: Searching for niche bloggers relevant to %s", target_site)
     try:
         blog_prospects = _discover_bloggers(target_site)
         all_prospects.extend(blog_prospects)
@@ -526,13 +683,25 @@ def run_backlink_prospector(state: SEOAgentState) -> dict[str, Any]:
         errors.append(msg)
 
     # 8. Company/Provider Discovery (web search)
-    logger.info("Step 8/8: Searching for kitchen/bathroom companies for partnerships")
+    logger.info("Step 8/9: Searching for kitchen/bathroom companies for partnerships")
     try:
         company_prospects = _discover_companies(target_site)
         all_prospects.extend(company_prospects)
         logger.info("Found %d company prospects", len(company_prospects))
     except Exception as exc:
         msg = f"Company discovery failed: {exc}"
+        logger.error(msg, exc_info=True)
+        errors.append(msg)
+
+    # 9. Roundup/Listicle Discovery (web search)
+    keyword_cluster = state.get("keyword_cluster", [])
+    logger.info("Step 9/9: Searching for roundup/listicle pages for %s", target_site)
+    try:
+        roundup_prospects = _search_roundups(target_site, keyword_cluster or None)
+        all_prospects.extend(roundup_prospects)
+        logger.info("Found %d roundup/listicle prospects", len(roundup_prospects))
+    except Exception as exc:
+        msg = f"Roundup discovery failed: {exc}"
         logger.error(msg, exc_info=True)
         errors.append(msg)
 
@@ -554,14 +723,26 @@ def run_backlink_prospector(state: SEOAgentState) -> dict[str, Any]:
             "dr": prospect.get("dr", 0),
             "monthly_traffic": prospect.get("monthly_traffic", 0),
             "discovery_method": prospect.get("discovery_method", "unknown"),
-            # segment: "blogger", "provider", or "" — helps filter prospect types.
-            # NOTE: seo_backlink_prospects table may need a 'segment' column added.
             "segment": prospect.get("segment", ""),
             "links_to_competitor": prospect.get("links_to_competitor", False),
             "competitor_names": prospect.get("competitor_names", []),
             "status": "new",
             "target_site": target_site,
         }
+        # Include broken link context if available (Wayback enrichment)
+        if prospect.get("dead_url"):
+            record["dead_url"] = prospect["dead_url"]
+        if prospect.get("dead_page_topic"):
+            record["dead_page_topic"] = prospect["dead_page_topic"]
+        if prospect.get("wayback_url"):
+            record["wayback_url"] = prospect["wayback_url"]
+        if prospect.get("anchor"):
+            record["anchor"] = prospect["anchor"]
+        # Include roundup-specific fields
+        if prospect.get("mentions_competitors") is not None:
+            record["mentions_competitors"] = prospect["mentions_competitors"]
+        if prospect.get("already_lists_us") is not None:
+            record["already_lists_us"] = prospect["already_lists_us"]
         try:
             saved = supabase_tools.insert_record(
                 "seo_backlink_prospects", record

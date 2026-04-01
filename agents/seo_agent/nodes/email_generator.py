@@ -154,6 +154,18 @@ def _build_user_message(prospect: dict[str, Any]) -> str:
         parts.append(f"Dead URL (broken link): {prospect['dead_url']}")
     if prospect.get("anchor"):
         parts.append(f"Broken Link Anchor Text: {prospect['anchor']}")
+    if prospect.get("dead_page_topic"):
+        parts.append(f"What the dead page covered: {prospect['dead_page_topic']}")
+    if prospect.get("wayback_url"):
+        parts.append(f"Archived version: {prospect['wayback_url']}")
+
+    # Add roundup context if applicable
+    if prospect.get("already_lists_us"):
+        parts.append("Note: Our tool is already listed on this page.")
+    if prospect.get("mentions_competitors"):
+        parts.append(
+            f"Competitor tools mentioned: {', '.join(prospect['mentions_competitors'])}"
+        )
 
     return "\n".join(parts)
 

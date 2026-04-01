@@ -9,6 +9,8 @@ class SEOAgentState(TypedDict):
     target_site: str
     task_type: str
     seed_keyword: Optional[str]
+    proposition: Optional[str]
+    keyword_cluster: list[str]
     keyword_opportunities: list[dict]
     content_gaps: list[dict]
     selected_keyword: Optional[str]

@@ -31,6 +31,7 @@ def build_graph() -> Any:
     Returns:
         A compiled LangGraph ``StateGraph`` ready for invocation.
     """
+    from agents.seo_agent.nodes.backlink_hunt import run_backlink_hunt
     from agents.seo_agent.nodes.backlink_prospector import (
         run_backlink_prospector,
     )
@@ -39,6 +40,7 @@ def build_graph() -> Any:
     from agents.seo_agent.nodes.content_writer import run_content_writer
     from agents.seo_agent.nodes.email_generator import run_email_generator
     from agents.seo_agent.nodes.internal_linker import run_internal_linker
+    from agents.seo_agent.nodes.link_verifier import run_link_verifier
     from agents.seo_agent.nodes.outreach_reporter import run_outreach_reporter
     from agents.seo_agent.nodes.outreach_sequencer import run_outreach_sequencer
     from agents.seo_agent.nodes.prospect_enrichment import (
@@ -67,6 +69,8 @@ def build_graph() -> Any:
     graph.add_node("email_generator", run_email_generator)
     graph.add_node("outreach_sequencer", run_outreach_sequencer)
     graph.add_node("outreach_reporter", run_outreach_reporter)
+    graph.add_node("link_verifier", run_link_verifier)
+    graph.add_node("backlink_hunt", run_backlink_hunt)
 
     # ---- Entry: route from START based on task_type ----
     graph.set_conditional_entry_point(
@@ -84,6 +88,8 @@ def build_graph() -> Any:
             "rank_report": "rank_tracker",
             "weekly_report": "reporting",
             "outreach_report": "outreach_reporter",
+            "verify_links": "link_verifier",
+            "backlink_hunt": "backlink_hunt",
             "END": END,
         },
     )
@@ -114,6 +120,8 @@ def build_graph() -> Any:
         "email_generator",
         "outreach_sequencer",
         "outreach_reporter",
+        "link_verifier",
+        "backlink_hunt",
     ]:
         graph.add_edge(node, END)
 
@@ -127,6 +135,8 @@ def create_initial_state(
     seed_keyword: str | None = None,
     selected_keyword: str | None = None,
     brief_id: str | None = None,
+    proposition: str | None = None,
+    keyword_cluster: list[str] | None = None,
 ) -> SEOAgentState:
     """Create an initial state dict for invoking the graph.
 
@@ -136,6 +146,8 @@ def create_initial_state(
         seed_keyword: Optional seed keyword for research tasks.
         selected_keyword: Optional keyword for brief/content tasks.
         brief_id: Optional Supabase brief ID for content writing.
+        proposition: Optional link-worthy angle description for backlink hunting.
+        keyword_cluster: Optional list of target keywords for backlink hunting.
 
     Returns:
         A fully initialised SEOAgentState dict.
@@ -144,6 +156,8 @@ def create_initial_state(
         target_site=target_site,
         task_type=task_type,
         seed_keyword=seed_keyword,
+        proposition=proposition,
+        keyword_cluster=keyword_cluster or [],
         keyword_opportunities=[],
         content_gaps=[],
         selected_keyword=selected_keyword,

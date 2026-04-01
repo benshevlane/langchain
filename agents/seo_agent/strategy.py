@@ -286,6 +286,15 @@ DEFAULT_SCHEDULE: list[dict[str, Any]] = [
         "label": "Weekly Memory Promotion",
         "description": "Promote high-value learnings to permanent lessons.",
     },
+    # --- Weekly link verification ---
+    {
+        "cadence": "weekly",
+        "day_of_week": 3,
+        "skill": "verify_links",
+        "boost_amount": 30,
+        "label": "Weekly Link Verification",
+        "description": "Check that acquired backlinks are still live.",
+    },
     # --- Monthly tasks ---
     {
         "cadence": "monthly",
