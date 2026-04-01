@@ -54,8 +54,8 @@ const NODES: Node<NodeData>[] = [
   { id: 'scraper', position: { x: 600, y: 120 }, data: { label: 'Scraper', role: 'Data Agent', color: '#8b5cf6' }, type: 'org' },
 
   // Level 2 — Ralf sub-systems
-  { id: 'worker', position: { x: 0, y: 260 }, data: { label: 'Worker', role: 'Every 3h', color: '#22c55e' }, type: 'org' },
-  { id: 'pulse', position: { x: 200, y: 260 }, data: { label: 'Pulse', role: 'Every 60min', color: '#f59e0b' }, type: 'org' },
+  { id: 'worker', position: { x: 0, y: 260 }, data: { label: 'Worker', role: 'Heavy Tasks — Every 3h', color: '#22c55e' }, type: 'org' },
+  { id: 'pulse', position: { x: 200, y: 260 }, data: { label: 'Pulse', role: 'Monitoring — Every 60min', color: '#f59e0b' }, type: 'org' },
   { id: 'heartbeat', position: { x: 400, y: 260 }, data: { label: 'Heartbeat', role: 'Orchestrator', color: '#ef4444' }, type: 'org' },
 
   // Level 3 — Worker nodes

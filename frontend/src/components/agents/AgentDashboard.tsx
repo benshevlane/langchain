@@ -1,21 +1,50 @@
-import { useEffect, useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import {
+  Activity as ActivityIcon,
+  DollarSign,
+  FileText,
+  CalendarClock,
+  Bell,
+  LayoutDashboard,
+} from 'lucide-react'
 import { useSupabase } from '../../hooks/useSupabase'
 import type { AgentTurn, CronExecution } from '../../types/database'
 import { AgentCard } from './AgentCard'
 import { AgentTurnLog } from './AgentTurnLog'
 import { ActivityTimeline } from './ActivityTimeline'
 import { CostChart } from './CostChart'
-import { Spinner } from '../ui/Spinner'
+import { CostSummary } from './CostSummary'
+import { AgentFiles } from './AgentFiles'
+import { AgentSchedule } from './AgentSchedule'
+import { AgentNotifications } from './AgentNotifications'
+import { Tabs } from '../ui/Tabs'
+import { SkeletonCard } from '../ui/Skeleton'
 import { useShellContext } from '../layout/Shell'
 
-const AGENTS = [
+export const AGENTS = [
   { name: 'ralf', description: 'SEO agent — content, outreach, rankings, reporting' },
   { name: 'scraper', description: 'Web scraper — data collection and enrichment' },
+]
+
+export const AGENT_JOB_IDS: Record<string, string[]> = {
+  ralf: ['worker', 'pulse'],
+  scraper: ['scraper_batch'],
+}
+
+const TABS = [
+  { key: 'overview', label: 'Overview', icon: <LayoutDashboard size={14} /> },
+  { key: 'activity', label: 'Activity', icon: <ActivityIcon size={14} /> },
+  { key: 'cost', label: 'Cost', icon: <DollarSign size={14} /> },
+  { key: 'files', label: 'Files', icon: <FileText size={14} /> },
+  { key: 'schedule', label: 'Schedule', icon: <CalendarClock size={14} /> },
+  { key: 'notifications', label: 'Notifications', icon: <Bell size={14} /> },
 ]
 
 export function AgentDashboard() {
   const { registerRefetch } = useShellContext()
   const todayStr = new Date().toISOString().slice(0, 10)
+  const [selectedAgent, setSelectedAgent] = useState(AGENTS[0].name)
+  const [activeTab, setActiveTab] = useState('overview')
 
   const { data: turns, loading: loadingTurns, refetch: refetchTurns } = useSupabase<AgentTurn>({
     table: 'agent_turns',
@@ -36,16 +65,6 @@ export function AgentDashboard() {
     const cleanup2 = registerRefetch(refetchExecs)
     return () => { cleanup1(); cleanup2() }
   }, [registerRefetch, refetchTurns, refetchExecs])
-
-  if (loadingTurns || loadingExecs) {
-    return <Spinner />
-  }
-
-  // Map agent names to the cron job_ids they own
-  const AGENT_JOB_IDS: Record<string, string[]> = {
-    ralf: ['worker', 'pulse'],
-    scraper: ['scraper_batch'],
-  }
 
   const agentStats = useMemo(() => {
     const stats: Record<string, { lastActive: string | null; turnsToday: number; tokensToday: number; hasRunning: boolean; hasError: boolean }> = {}
@@ -75,31 +94,65 @@ export function AgentDashboard() {
     return 'idle'
   }
 
+  const loading = loadingTurns || loadingExecs
+
   return (
     <div className="space-y-6">
-      {/* Agent cards */}
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        {AGENTS.map((agent) => (
-          <AgentCard
-            key={agent.name}
-            name={agent.name}
-            description={agent.description}
-            status={getStatus(agent.name)}
-            lastActive={agentStats[agent.name]?.lastActive ?? null}
-            turnsToday={agentStats[agent.name]?.turnsToday ?? 0}
-            tokensToday={agentStats[agent.name]?.tokensToday ?? 0}
-          />
-        ))}
+      {/* Agent selector cards */}
+      {loading ? (
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          <SkeletonCard />
+          <SkeletonCard />
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          {AGENTS.map((agent) => (
+            <AgentCard
+              key={agent.name}
+              name={agent.name}
+              description={agent.description}
+              status={getStatus(agent.name)}
+              lastActive={agentStats[agent.name]?.lastActive ?? null}
+              turnsToday={agentStats[agent.name]?.turnsToday ?? 0}
+              tokensToday={agentStats[agent.name]?.tokensToday ?? 0}
+              selected={selectedAgent === agent.name}
+              onClick={() => setSelectedAgent(agent.name)}
+            />
+          ))}
+        </div>
+      )}
+
+      {/* Tab bar */}
+      <Tabs tabs={TABS} active={activeTab} onChange={setActiveTab} />
+
+      {/* Tab content */}
+      <div>
+        {activeTab === 'overview' && (
+          <div className="space-y-6">
+            <ActivityTimeline agentName={selectedAgent} />
+            <CostChart agentName={selectedAgent} />
+            <AgentTurnLog agentName={selectedAgent} />
+          </div>
+        )}
+        {activeTab === 'activity' && (
+          <ActivityTimeline agentName={selectedAgent} />
+        )}
+        {activeTab === 'cost' && (
+          <div className="space-y-6">
+            <CostSummary agentName={selectedAgent} />
+            <CostChart agentName={selectedAgent} />
+          </div>
+        )}
+        {activeTab === 'files' && (
+          <AgentFiles agentName={selectedAgent} />
+        )}
+        {activeTab === 'schedule' && (
+          <AgentSchedule agentName={selectedAgent} />
+        )}
+        {activeTab === 'notifications' && (
+          <AgentNotifications agentName={selectedAgent} />
+        )}
       </div>
-
-      {/* Activity timeline — what the agent actually did */}
-      <ActivityTimeline />
-
-      {/* Cost chart */}
-      <CostChart />
-
-      {/* Turn log */}
-      <AgentTurnLog />
     </div>
   )
 }
