@@ -188,3 +188,41 @@ export interface CampaignGoal {
   updated_at: string
   created_at: string
 }
+
+export interface AgentFile {
+  id: string
+  agent_name: string
+  file_name: string
+  content: string
+  file_type: string
+  char_count: number
+  word_count: number
+  created_at: string
+  updated_at: string
+}
+
+export interface AgentNotificationConfig {
+  id: string
+  agent_name: string
+  channel: 'email' | 'telegram' | 'slack'
+  trigger: 'on_success' | 'on_failure' | 'on_every_run' | 'on_cost_threshold'
+  cost_threshold_usd: number | null
+  frequency_cap_minutes: number | null
+  active: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface AgentScheduleConfig {
+  id: string
+  agent_name: string
+  job_id: string
+  frequency: 'hourly' | 'daily' | 'weekly' | 'custom'
+  cron_expression: string | null
+  time_of_day: string | null
+  day_of_week: number | null
+  active: boolean
+  next_run_at: string | null
+  created_at: string
+  updated_at: string
+}

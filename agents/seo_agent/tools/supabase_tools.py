@@ -141,7 +141,15 @@ TABLE_SCHEMAS: dict[str, str] = {
             last_contacted_at TIMESTAMPTZ,
             follow_up_count INTEGER DEFAULT 0,
             reply_received BOOLEAN DEFAULT false,
-            target_site TEXT
+            target_site TEXT,
+            segment TEXT DEFAULT '',
+            contact_source TEXT DEFAULT '',
+            dead_url TEXT DEFAULT '',
+            dead_page_topic TEXT DEFAULT '',
+            wayback_url TEXT DEFAULT '',
+            anchor TEXT DEFAULT '',
+            mentions_competitors JSONB DEFAULT '[]',
+            already_lists_us BOOLEAN DEFAULT FALSE
         );
     """,
     "seo_rank_history": """

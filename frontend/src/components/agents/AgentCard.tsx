@@ -9,6 +9,8 @@ interface AgentCardProps {
   lastActive: string | null
   turnsToday: number
   tokensToday: number
+  selected?: boolean
+  onClick?: () => void
 }
 
 const statusConfig = {
@@ -17,41 +19,47 @@ const statusConfig = {
   error: { variant: 'danger' as const, label: 'Error' },
 }
 
-export function AgentCard({ name, description, status, lastActive, turnsToday, tokensToday }: AgentCardProps) {
+export function AgentCard({ name, description, status, lastActive, turnsToday, tokensToday, selected, onClick }: AgentCardProps) {
   const { variant, label } = statusConfig[status]
 
   return (
-    <Card>
-      <div className="flex items-start justify-between">
-        <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-[var(--color-primary)]/10">
-            <Bot size={20} className="text-[var(--color-primary)]" />
+    <Card
+      className={`transition-all ${onClick ? 'cursor-pointer hover:border-[var(--color-primary)]/50' : ''} ${
+        selected ? 'border-[var(--color-primary)] ring-1 ring-[var(--color-primary)]/30' : ''
+      }`}
+    >
+      <div onClick={onClick}>
+        <div className="flex items-start justify-between">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-[var(--color-primary)]/10">
+              <Bot size={20} className="text-[var(--color-primary)]" />
+            </div>
+            <div>
+              <h3 className="font-semibold capitalize">{name}</h3>
+              <p className="text-xs text-[var(--color-text-muted)]">{description}</p>
+            </div>
           </div>
-          <div>
-            <h3 className="font-semibold capitalize">{name}</h3>
-            <p className="text-xs text-[var(--color-text-muted)]">{description}</p>
-          </div>
+          <Badge variant={variant}>{label}</Badge>
         </div>
-        <Badge variant={variant}>{label}</Badge>
-      </div>
 
-      <div className="mt-4 grid grid-cols-3 gap-4 border-t border-[var(--color-border)] pt-4">
-        <div>
-          <p className="text-xs text-[var(--color-text-muted)]">Last active</p>
-          <p className="text-sm font-medium">
-            {lastActive ? new Date(lastActive).toLocaleString() : '—'}
-          </p>
-        </div>
-        <div>
-          <p className="text-xs text-[var(--color-text-muted)]">Turns today</p>
-          <p className="text-sm font-medium">{turnsToday}</p>
-        </div>
-        <div className="flex items-start gap-1">
+        <div className="mt-4 grid grid-cols-3 gap-4 border-t border-[var(--color-border)] pt-4">
           <div>
-            <p className="text-xs text-[var(--color-text-muted)]">Tokens today</p>
-            <p className="text-sm font-medium">{tokensToday.toLocaleString()}</p>
+            <p className="text-xs text-[var(--color-text-muted)]">Last active</p>
+            <p className="text-sm font-medium">
+              {lastActive ? new Date(lastActive).toLocaleString() : '—'}
+            </p>
           </div>
-          <Zap size={12} className="mt-4 text-amber-400" />
+          <div>
+            <p className="text-xs text-[var(--color-text-muted)]">Turns today</p>
+            <p className="text-sm font-medium">{turnsToday}</p>
+          </div>
+          <div className="flex items-start gap-1">
+            <div>
+              <p className="text-xs text-[var(--color-text-muted)]">Tokens today</p>
+              <p className="text-sm font-medium">{tokensToday.toLocaleString()}</p>
+            </div>
+            <Zap size={12} className="mt-4 text-amber-400" />
+          </div>
         </div>
       </div>
     </Card>

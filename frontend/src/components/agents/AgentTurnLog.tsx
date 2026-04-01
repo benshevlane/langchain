@@ -3,7 +3,11 @@ import type { AgentTurn } from '../../types/database'
 import { Card, CardHeader, CardTitle } from '../ui/Card'
 import { Badge } from '../ui/Badge'
 import { Table } from '../ui/Table'
-import { Spinner } from '../ui/Spinner'
+import { SkeletonList } from '../ui/Skeleton'
+
+interface Props {
+  agentName?: string
+}
 
 const turnTypeVariant: Record<string, 'info' | 'success' | 'warning' | 'neutral'> = {
   user: 'info',
@@ -65,25 +69,26 @@ const columns = [
   },
 ]
 
-export function AgentTurnLog() {
+export function AgentTurnLog({ agentName }: Props) {
   const { data, loading, error } = useSupabase<AgentTurn>({
     table: 'agent_turns',
     order: { column: 'created_at', ascending: false },
     limit: 50,
     realtime: true,
+    ...(agentName ? { filters: { agent_name: agentName } } : {}),
   })
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Recent Agent Activity</CardTitle>
+        <CardTitle>Turn Log</CardTitle>
       </CardHeader>
       {loading ? (
-        <Spinner />
+        <SkeletonList rows={5} />
       ) : error ? (
         <p className="text-sm text-[var(--color-danger)]">{error}</p>
       ) : (
-        <Table columns={columns} data={data} />
+        <Table columns={columns} data={data} emptyMessage="No turns recorded yet" />
       )}
     </Card>
   )
