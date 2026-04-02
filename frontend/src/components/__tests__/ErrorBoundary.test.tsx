@@ -5,7 +5,7 @@ function GoodChild() {
   return <p>All is well</p>
 }
 
-function BadChild(): JSX.Element {
+function BadChild(): React.ReactNode {
   throw new Error('Boom!')
 }
 

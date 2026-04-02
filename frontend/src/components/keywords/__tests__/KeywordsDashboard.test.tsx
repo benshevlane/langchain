@@ -1,4 +1,4 @@
-import { screen, waitFor } from '@testing-library/react'
+import { screen } from '@testing-library/react'
 import { renderWithProviders } from '../../../test/helpers'
 import { KeywordsDashboard } from '../KeywordsDashboard'
 

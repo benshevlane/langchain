@@ -32,7 +32,7 @@ describe('useSupabase', () => {
     const { supabase } = await import('../../utils/supabase')
     renderHook(() => useSupabase({ table: 'my_custom_table' }))
     await waitFor(() => {
-      expect(supabase.from).toHaveBeenCalledWith('my_custom_table')
+      expect(supabase!.from).toHaveBeenCalledWith('my_custom_table')
     })
   })
 
