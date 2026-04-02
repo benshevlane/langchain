@@ -1,0 +1,182 @@
+# Full CI/CD pipeline for the LangChain monorepo.
+#
+# Triggered on push to main. Runs tests, applies Supabase database
+# migrations, and deploys all services to Railway.
+#
+# Job dependency graph:
+#   test → migrate → deploy-backend
+#   test → deploy-frontend (parallel with migrate)
+#
+# Required secrets:
+#   - RAILWAY_TOKEN: Railway project API token
+#   - DATABASE_URL: Supabase PostgreSQL connection string
+
+name: "🚀 CI/CD"
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  PYTHON_VERSION: "3.12"
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Job 1: Lint & Test
+  # ---------------------------------------------------------------------------
+  test:
+    name: "🧪 Lint & Test"
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: "📋 Checkout Code"
+        uses: actions/checkout@v6
+
+      - name: "🐍 Set up Python"
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: "📦 Install Dependencies"
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install ruff pytest
+
+      - name: "🔍 Lint with Ruff"
+        run: |
+          ruff check agents/ --output-format=github || true
+
+      - name: "🧪 Run Tests"
+        run: |
+          if [ -d "tests" ] && [ "$(find tests -name '*.py' -type f | head -1)" ]; then
+            pytest tests/ -q --tb=short
+          else
+            echo "No tests directory found — skipping."
+          fi
+
+  # ---------------------------------------------------------------------------
+  # Job 2: Supabase Database Migrations
+  # ---------------------------------------------------------------------------
+  migrate:
+    name: "🗄️ Run Migrations"
+    needs: [test]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: "📋 Checkout Code"
+        uses: actions/checkout@v6
+
+      - name: "🐘 Install PostgreSQL Client"
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client
+
+      - name: "🗄️ Apply SQL Migrations"
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          if [ -z "$DATABASE_URL" ]; then
+            echo "::warning::DATABASE_URL secret is not set — skipping migrations."
+            exit 0
+          fi
+
+          echo "Applying migrations to Supabase..."
+          for file in migrations/*.sql; do
+            echo "→ Running $file"
+            psql "$DATABASE_URL" -f "$file" -v ON_ERROR_STOP=1
+          done
+          echo "✅ All migrations applied successfully."
+
+  # ---------------------------------------------------------------------------
+  # Job 3: Deploy Backend Services (SEO Agent + Scraper) to Railway
+  # ---------------------------------------------------------------------------
+  deploy-backend:
+    name: "🚂 Deploy Backend"
+    needs: [migrate]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: "📋 Checkout Code"
+        uses: actions/checkout@v6
+
+      - name: "🔧 Install Railway CLI"
+        run: npm install -g @railway/cli
+
+      - name: "🚀 Deploy SEO Agent"
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: |
+          if [ -z "$RAILWAY_TOKEN" ]; then
+            echo "::warning::RAILWAY_TOKEN secret is not set — skipping deployment."
+            exit 0
+          fi
+          echo "Deploying SEO Agent service..."
+          railway up --detach
+
+      - name: "🚀 Deploy Scraper Agent"
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: |
+          if [ -z "$RAILWAY_TOKEN" ]; then
+            echo "::warning::RAILWAY_TOKEN secret is not set — skipping deployment."
+            exit 0
+          fi
+          echo "Deploying Scraper Agent service..."
+          railway up --detach --config railway.scraper.toml
+
+  # ---------------------------------------------------------------------------
+  # Job 4: Deploy Frontend to Railway (parallel with migrations)
+  # ---------------------------------------------------------------------------
+  deploy-frontend:
+    name: "🌐 Deploy Frontend"
+    needs: [test]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - name: "📋 Checkout Code"
+        uses: actions/checkout@v6
+
+      - name: "🔧 Install Railway CLI"
+        run: npm install -g @railway/cli
+
+      - name: "🚀 Deploy Frontend"
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: |
+          if [ -z "$RAILWAY_TOKEN" ]; then
+            echo "::warning::RAILWAY_TOKEN secret is not set — skipping deployment."
+            exit 0
+          fi
+          echo "Deploying Frontend service..."
+          railway up --detach
+
+  # ---------------------------------------------------------------------------
+  # Job 5: Final Status Gate
+  # ---------------------------------------------------------------------------
+  ci-success:
+    name: "✅ CI/CD Success"
+    needs: [test, migrate, deploy-backend, deploy-frontend]
+    if: always()
+    runs-on: ubuntu-latest
+    env:
+      JOBS_JSON: ${{ toJSON(needs) }}
+      RESULTS_JSON: ${{ toJSON(needs.*.result) }}
+      EXIT_CODE: ${{ !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') && '0' || '1' }}
+    steps:
+      - name: "🎉 Report Final Status"
+        run: |
+          echo "Job results: $RESULTS_JSON"
+          echo "Exiting with code $EXIT_CODE"
+          exit $EXIT_CODE
