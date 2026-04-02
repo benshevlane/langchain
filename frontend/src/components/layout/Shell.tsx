@@ -2,6 +2,7 @@ import { useCallback, useState } from 'react'
 import { Outlet, useOutletContext } from 'react-router-dom'
 import { Sidebar } from './Sidebar'
 import { Header } from './Header'
+import { SiteSwitcher } from '../SiteSwitcher'
 
 export type ShellContext = { registerRefetch: (fn: () => void) => () => void }
 
@@ -21,12 +22,15 @@ export function Shell() {
 
   return (
     <div className="h-screen overflow-hidden">
-      <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
-      <div className="flex h-full flex-col md:ml-56">
-        <Header onMenuToggle={() => setSidebarOpen(true)} onRefresh={handleRefresh} />
-        <main className="min-h-0 flex-1 overflow-y-auto p-4 md:p-6">
-          <Outlet context={{ registerRefetch } satisfies ShellContext} />
-        </main>
+      <SiteSwitcher />
+      <div className="flex" style={{ height: 'calc(100vh - 48px)' }}>
+        <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+        <div className="flex flex-1 flex-col md:ml-56">
+          <Header onMenuToggle={() => setSidebarOpen(true)} onRefresh={handleRefresh} />
+          <main className="min-h-0 flex-1 overflow-y-auto p-4 md:p-6">
+            <Outlet context={{ registerRefetch } satisfies ShellContext} />
+          </main>
+        </div>
       </div>
     </div>
   )

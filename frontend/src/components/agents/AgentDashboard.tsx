@@ -6,8 +6,10 @@ import {
   CalendarClock,
   Bell,
   LayoutDashboard,
+  Settings2,
 } from 'lucide-react'
 import { useSupabase } from '../../hooks/useSupabase'
+import { useSite } from '../../context/SiteContext'
 import type { AgentTurn, CronExecution } from '../../types/database'
 import { AgentCard } from './AgentCard'
 import { AgentTurnLog } from './AgentTurnLog'
@@ -17,6 +19,7 @@ import { CostSummary } from './CostSummary'
 import { AgentFiles } from './AgentFiles'
 import { AgentSchedule } from './AgentSchedule'
 import { AgentNotifications } from './AgentNotifications'
+import { AgentStatusPanel } from './AgentStatusPanel'
 import { Tabs } from '../ui/Tabs'
 import { SkeletonCard } from '../ui/Skeleton'
 import { useShellContext } from '../layout/Shell'
@@ -38,10 +41,12 @@ const TABS = [
   { key: 'files', label: 'Files', icon: <FileText size={14} /> },
   { key: 'schedule', label: 'Schedule', icon: <CalendarClock size={14} /> },
   { key: 'notifications', label: 'Notifications', icon: <Bell size={14} /> },
+  { key: 'agent_status', label: 'Agent Status', icon: <Settings2 size={14} /> },
 ]
 
 export function AgentDashboard() {
   const { registerRefetch } = useShellContext()
+  const { selectedSite } = useSite()
   const todayStr = new Date().toISOString().slice(0, 10)
   const [selectedAgent, setSelectedAgent] = useState(AGENTS[0].name)
   const [activeTab, setActiveTab] = useState('overview')
@@ -51,6 +56,7 @@ export function AgentDashboard() {
     order: { column: 'created_at', ascending: false },
     limit: 200,
     realtime: true,
+    filters: { site: selectedSite },
   })
 
   const { data: executions, loading: loadingExecs, refetch: refetchExecs } = useSupabase<CronExecution>({
@@ -151,6 +157,9 @@ export function AgentDashboard() {
         )}
         {activeTab === 'notifications' && (
           <AgentNotifications agentName={selectedAgent} />
+        )}
+        {activeTab === 'agent_status' && (
+          <AgentStatusPanel />
         )}
       </div>
     </div>

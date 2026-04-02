@@ -29,9 +29,10 @@ export function Sidebar({ open, onClose }: SidebarProps) {
 
       {/* Sidebar */}
       <aside
-        className={`fixed left-0 top-0 z-50 flex h-screen w-56 flex-col border-r border-[var(--color-border)] bg-[var(--color-surface)] transition-transform duration-200 md:translate-x-0 ${
+        className={`fixed left-0 top-12 z-50 flex w-56 flex-col border-r border-[var(--color-border)] bg-[var(--color-surface)] transition-transform duration-200 md:translate-x-0 ${
           open ? 'translate-x-0' : '-translate-x-full'
         }`}
+        style={{ height: 'calc(100vh - 48px)' }}
       >
         {/* Logo + close button */}
         <div className="flex h-16 items-center justify-between border-b border-[var(--color-border)] px-5">

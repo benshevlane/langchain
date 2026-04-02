@@ -1,6 +1,7 @@
 import { useMemo } from 'react'
 import { CheckCircle2, XCircle, Clock, RefreshCw, Zap } from 'lucide-react'
 import { useSupabase } from '../../hooks/useSupabase'
+import { useSite } from '../../context/SiteContext'
 import { Card, CardHeader, CardTitle } from '../ui/Card'
 import { Badge } from '../ui/Badge'
 import { Button } from '../ui/Button'
@@ -51,17 +52,20 @@ const statusBadge = {
 }
 
 export function ActivityTimeline({ agentName }: Props) {
+  const { selectedSite } = useSite()
+
   const { data: scheduleData, loading: loadingSchedule, refetch: refetchSchedule } = useSupabase<ScheduleLogEntry>({
     table: 'ralf_schedule_log',
     order: { column: 'created_at', ascending: false },
     limit: 50,
+    filters: { site: selectedSite },
   })
 
   const { data: turnData, loading: loadingTurns, refetch: refetchTurns } = useSupabase<AgentTurn>({
     table: 'agent_turns',
     order: { column: 'created_at', ascending: false },
     limit: 50,
-    filters: { agent_name: agentName },
+    filters: { agent_name: agentName, site: selectedSite },
     realtime: true,
   })
 
@@ -160,6 +164,7 @@ export function ActivityTimeline({ agentName }: Props) {
                           {entry.status}
                         </Badge>
                         <Badge variant="neutral">{entry.source}</Badge>
+                        <Badge variant="info">{selectedSite}</Badge>
                       </div>
                       {entry.detail && (
                         <p className="mt-0.5 truncate text-xs text-[var(--color-text-muted)]">
