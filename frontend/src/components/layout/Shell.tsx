@@ -3,7 +3,7 @@ import { Outlet, useOutletContext } from 'react-router-dom'
 import { Sidebar } from './Sidebar'
 import { Header } from './Header'
 
-export type ShellContext = { registerRefetch: (fn: () => void) => void }
+export type ShellContext = { registerRefetch: (fn: () => void) => () => void }
 
 export function Shell() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
