@@ -1,6 +1,7 @@
 import { useMemo } from 'react'
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts'
 import { useSupabase } from '../../hooks/useSupabase'
+import { useSite } from '../../context/SiteContext'
 import type { LlmCostLog } from '../../types/database'
 import { Card, CardHeader, CardTitle } from '../ui/Card'
 import { SkeletonChart } from '../ui/Skeleton'
@@ -10,11 +11,13 @@ interface Props {
 }
 
 export function CostChart({ agentName }: Props) {
+  const { selectedSite } = useSite()
   const { data, loading, error } = useSupabase<LlmCostLog>({
     table: 'llm_cost_log',
     order: { column: 'created_at', ascending: true },
     limit: 500,
     realtime: true,
+    filters: { site: selectedSite },
   })
 
   const filteredData = useMemo(() => {

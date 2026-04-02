@@ -239,3 +239,13 @@ export interface BacklinkTargetConfig {
   created_at: string
   updated_at: string
 }
+
+export interface SiteAgentConfig {
+  id: string
+  site: string
+  agent_id: string
+  enabled: boolean
+  config: Record<string, unknown>
+  last_run_at: string | null
+  updated_at: string
+}

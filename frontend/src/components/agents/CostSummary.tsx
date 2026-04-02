@@ -1,6 +1,7 @@
 import { useMemo } from 'react'
 import { DollarSign, Zap, TrendingUp } from 'lucide-react'
 import { useSupabase } from '../../hooks/useSupabase'
+import { useSite } from '../../context/SiteContext'
 import type { LlmCostLog } from '../../types/database'
 import { Card } from '../ui/Card'
 import { SkeletonLine } from '../ui/Skeleton'
@@ -32,11 +33,13 @@ interface PeriodStat {
 }
 
 export function CostSummary({ agentName }: Props) {
+  const { selectedSite } = useSite()
   const { data, loading } = useSupabase<LlmCostLog>({
     table: 'llm_cost_log',
     order: { column: 'created_at', ascending: false },
     limit: 1000,
     realtime: true,
+    filters: { site: selectedSite },
   })
 
   const stats = useMemo(() => {

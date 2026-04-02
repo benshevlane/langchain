@@ -1,4 +1,5 @@
 import { useSupabase } from '../../hooks/useSupabase'
+import { useSite } from '../../context/SiteContext'
 import type { AgentTurn } from '../../types/database'
 import { Card, CardHeader, CardTitle } from '../ui/Card'
 import { Badge } from '../ui/Badge'
@@ -67,15 +68,26 @@ const columns = [
       </span>
     ),
   },
+  {
+    key: 'site',
+    header: 'Site',
+    render: (row: AgentTurn & { site?: string }) => (
+      <Badge variant="neutral">{row.site ?? '—'}</Badge>
+    ),
+  },
 ]
 
 export function AgentTurnLog({ agentName }: Props) {
+  const { selectedSite } = useSite()
+  const filters: Record<string, string> = { site: selectedSite }
+  if (agentName) filters.agent_name = agentName
+
   const { data, loading, error } = useSupabase<AgentTurn>({
     table: 'agent_turns',
     order: { column: 'created_at', ascending: false },
     limit: 50,
     realtime: true,
-    ...(agentName ? { filters: { agent_name: agentName } } : {}),
+    filters,
   })
 
   return (
