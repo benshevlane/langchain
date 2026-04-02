@@ -8,6 +8,8 @@ const titles: Record<string, string> = {
   '/org-chart': 'Org Chart',
   '/crm': 'CRM',
   '/keywords': 'Keywords',
+  '/backlinks': 'Backlinks',
+  '/strategy': 'Strategy',
 }
 
 interface HeaderProps {

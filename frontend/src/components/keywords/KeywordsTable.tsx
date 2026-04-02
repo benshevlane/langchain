@@ -67,10 +67,11 @@ export function KeywordsTable({ data }: Props) {
             <tr className="border-b border-[var(--color-border)] text-left text-xs text-[var(--color-text-muted)]">
               {COLUMNS.map((col) => {
                 const isUrl = col.label === 'URL'
+                const isKeyword = col.key === 'keyword'
                 return (
                   <th
                     key={col.label}
-                    className={`px-3 py-2.5 font-medium ${isUrl ? '' : 'cursor-pointer select-none hover:text-[var(--color-text)]'}`}
+                    className={`px-3 py-2.5 font-medium ${isKeyword ? 'min-w-[140px]' : ''} ${isUrl ? '' : 'cursor-pointer select-none hover:text-[var(--color-text)]'}`}
                     onClick={isUrl ? undefined : () => handleSort(col.key)}
                   >
                     <span className="inline-flex items-center gap-1">
@@ -102,7 +103,7 @@ export function KeywordsTable({ data }: Props) {
                   key={row.id}
                   className="border-b border-[var(--color-border)] last:border-0 hover:bg-[var(--color-surface-hover)] transition-colors"
                 >
-                  <td className="px-3 py-2.5 font-medium">{row.keyword}</td>
+                  <td className="px-3 py-2.5 font-medium whitespace-nowrap">{row.keyword || '—'}</td>
                   <td className="px-3 py-2.5">{row.position ?? '—'}</td>
                   <td className="px-3 py-2.5">
                     <ChangeCell change={row.change} />
