@@ -53,12 +53,6 @@ DROP POLICY IF EXISTS "anon_select_seo_backlink_prospects" ON seo_backlink_prosp
 CREATE POLICY "anon_select_seo_backlink_prospects"
     ON seo_backlink_prospects FOR SELECT TO anon USING (true);
 
--- agent_memories (read-only from frontend)
-ALTER TABLE agent_memories ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS "anon_select_agent_memories" ON agent_memories;
-CREATE POLICY "anon_select_agent_memories"
-    ON agent_memories FOR SELECT TO anon USING (true);
-
 -- ===========================================================================
 -- 2. Defensive: explicit service_role full access (in case RLS bypass toggled off)
 -- ===========================================================================
@@ -86,6 +80,29 @@ CREATE POLICY "service_role_all_ralf_schedule"
 -- ===========================================================================
 -- 3. CREATE missing tables referenced by frontend
 -- ===========================================================================
+
+-- agent_memories — episodic memory (defined in 007 but may not have been run)
+CREATE TABLE IF NOT EXISTS agent_memories (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    category TEXT NOT NULL,
+    content TEXT NOT NULL,
+    importance INTEGER DEFAULT 5,
+    source TEXT DEFAULT 'telegram',
+    tags JSONB DEFAULT '[]',
+    recall_count INTEGER DEFAULT 0,
+    last_recalled_at TIMESTAMPTZ,
+    site TEXT,
+    promoted BOOLEAN DEFAULT false,
+    created_at TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_agent_memories_category ON agent_memories(category);
+CREATE INDEX IF NOT EXISTS idx_agent_memories_created ON agent_memories(created_at DESC);
+
+ALTER TABLE agent_memories ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "anon_select_agent_memories" ON agent_memories;
+CREATE POLICY "anon_select_agent_memories"
+    ON agent_memories FOR SELECT TO anon USING (true);
 
 -- agent_files — documents/artifacts produced by agents
 CREATE TABLE IF NOT EXISTS agent_files (
