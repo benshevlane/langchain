@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import { supabase, isConfigured } from '../utils/supabase'
 import { useSupabase } from './useSupabase'
 import type { ScheduleEntry } from '../types/database'
@@ -25,18 +25,30 @@ export function useScheduleEntries() {
 
   const [savingSkill, setSavingSkill] = useState<string | null>(null)
   const [mutationError, setMutationError] = useState<string | null>(null)
+  const savingRef = useRef(false)
+
+  // Optimistic frequency kept while a save is in-flight so the controlled
+  // <select> doesn't revert to the stale derived value during refetch.
+  const [optimistic, setOptimistic] = useState<Record<string, FrequencyOption>>({})
 
   const deriveFrequency = useCallback(
     (skillName: string): FrequencyOption => {
+      // Return the optimistic value while a save is in progress
+      if (optimistic[skillName]) return optimistic[skillName]
+
       const rows = entries.filter((e) => e.skill === skillName && e.active)
 
       const dailyCount = rows.filter((r) => r.cadence === 'daily').length
-      const weeklyCount = rows.filter((r) => r.cadence === 'weekly').length
+      const weeklyRows = rows.filter((r) => r.cadence === 'weekly')
       const monthlyCount = rows.filter((r) => r.cadence === 'monthly').length
 
       if (dailyCount >= 3) return '3x_week'
       if (dailyCount >= 2) return '2x_week'
-      if (dailyCount === 1 || weeklyCount >= 1) return 'weekly'
+      if (weeklyRows.length >= 1) {
+        if (weeklyRows.some((r) => r.label?.includes('fortnightly'))) return 'fortnightly'
+        return 'weekly'
+      }
+      if (dailyCount === 1) return 'weekly'
       if (monthlyCount >= 1) return 'monthly'
 
       // Check if rows exist but are all inactive
@@ -46,16 +58,18 @@ export function useScheduleEntries() {
       // No rows at all — treat as weekly (default)
       return 'weekly'
     },
-    [entries],
+    [entries, optimistic],
   )
 
   const updateFrequency = useCallback(
     async (skillName: string, frequency: FrequencyOption, category: string) => {
       if (!isConfigured || !supabase) return
-      // Prevent concurrent saves — if already saving, ignore the request
-      if (savingSkill) return
+      // Prevent concurrent saves — use a ref to avoid stale closure reads
+      if (savingRef.current) return
+      savingRef.current = true
       setSavingSkill(skillName)
       setMutationError(null)
+      setOptimistic((prev) => ({ ...prev, [skillName]: frequency }))
 
       try {
         // Deactivate all existing rows for this skill
@@ -144,7 +158,13 @@ export function useScheduleEntries() {
         console.error('Failed to update schedule:', err)
         setMutationError(err instanceof Error ? err.message : String(err))
       } finally {
+        savingRef.current = false
         setSavingSkill(null)
+        setOptimistic((prev) => {
+          const next = { ...prev }
+          delete next[skillName]
+          return next
+        })
       }
     },
     [refetch],
