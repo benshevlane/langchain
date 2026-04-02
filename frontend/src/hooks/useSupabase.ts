@@ -65,6 +65,7 @@ export function useSupabase<T>({
       if (cancelled) return
 
       if (err) {
+        console.error(`[useSupabase] ${table}: ${err.message}`)
         setError(err.message)
         setData([])
       } else {
