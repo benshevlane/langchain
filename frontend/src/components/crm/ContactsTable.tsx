@@ -71,10 +71,11 @@ export function ContactsTable() {
   const [statusFilter, setStatusFilter] = useState('')
   const [search, setSearch] = useState('')
 
-  const { data, loading, error } = useSupabase<CrmContact>({
+  const { data, loading, error, refetch } = useSupabase<CrmContact>({
     table: 'crm_contacts',
     order: { column: 'updated_at', ascending: false },
     limit: 200,
+    realtime: true,
   })
 
   const filtered = data.filter((c) => {
@@ -152,7 +153,7 @@ export function ContactsTable() {
         )}
       </Card>
 
-      {selected && <ContactDetail contact={selected} onClose={() => setSelectedId(null)} />}
+      {selected && <ContactDetail contact={selected} onClose={() => setSelectedId(null)} onUpdated={refetch} />}
     </>
   )
 }

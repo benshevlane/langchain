@@ -19,6 +19,7 @@ export function InteractionLog() {
     table: 'crm_interactions',
     order: { column: 'created_at', ascending: false },
     limit: 50,
+    realtime: true,
   })
 
   return (

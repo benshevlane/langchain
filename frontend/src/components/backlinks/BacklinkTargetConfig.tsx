@@ -47,6 +47,10 @@ interface LocalConfig {
   max_prospects_per_method: number
   active: boolean
   notes: string
+  tavily_enabled: boolean
+  tavily_search_depth: 'basic' | 'advanced'
+  firecrawl_enabled: boolean
+  firecrawl_extract_contacts: boolean
   existingId: string | null
 }
 
@@ -58,6 +62,10 @@ function defaultLocal(): LocalConfig {
     max_prospects_per_method: 50,
     active: true,
     notes: '',
+    tavily_enabled: false,
+    tavily_search_depth: 'basic',
+    firecrawl_enabled: false,
+    firecrawl_extract_contacts: true,
     existingId: null,
   }
 }
@@ -84,6 +92,10 @@ export function BacklinkTargetConfig() {
           max_prospects_per_method: existing.max_prospects_per_method,
           active: existing.active,
           notes: existing.notes ?? '',
+          tavily_enabled: existing.tavily_enabled ?? false,
+          tavily_search_depth: existing.tavily_search_depth ?? 'basic',
+          firecrawl_enabled: existing.firecrawl_enabled ?? false,
+          firecrawl_extract_contacts: existing.firecrawl_extract_contacts ?? true,
           existingId: existing.id,
         }
       } else {
@@ -137,6 +149,10 @@ export function BacklinkTargetConfig() {
         max_prospects_per_method: config.max_prospects_per_method,
         active: config.active,
         notes: config.notes,
+        tavily_enabled: config.tavily_enabled,
+        tavily_search_depth: config.tavily_search_depth,
+        firecrawl_enabled: config.firecrawl_enabled,
+        firecrawl_extract_contacts: config.firecrawl_extract_contacts,
         updated_at: new Date().toISOString(),
       }
 
@@ -264,6 +280,73 @@ export function BacklinkTargetConfig() {
                     </label>
                   ))}
                 </div>
+              </div>
+
+              {/* Scraping Tools */}
+              <div>
+                <label className="mb-1.5 block text-sm font-medium">
+                  Scraping Tools
+                </label>
+                <div className="space-y-3 rounded-lg border border-[var(--color-border)] p-3">
+                  {/* Tavily */}
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Toggle
+                        checked={config.tavily_enabled}
+                        onChange={(v) => update(key, { tavily_enabled: v })}
+                        label=""
+                      />
+                      <span className="text-sm font-medium">Tavily Search</span>
+                      <span className="text-xs text-[var(--color-text-muted)]">
+                        Web search for prospect discovery
+                      </span>
+                    </div>
+                    {config.tavily_enabled && (
+                      <select
+                        value={config.tavily_search_depth}
+                        onChange={(e) =>
+                          update(key, {
+                            tavily_search_depth: e.target.value as 'basic' | 'advanced',
+                          })
+                        }
+                        className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1 text-xs"
+                      >
+                        <option value="basic">Basic</option>
+                        <option value="advanced">Advanced</option>
+                      </select>
+                    )}
+                  </div>
+                  {/* Firecrawl */}
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Toggle
+                        checked={config.firecrawl_enabled}
+                        onChange={(v) => update(key, { firecrawl_enabled: v })}
+                        label=""
+                      />
+                      <span className="text-sm font-medium">Firecrawl</span>
+                      <span className="text-xs text-[var(--color-text-muted)]">
+                        Page extraction and data enrichment
+                      </span>
+                    </div>
+                    {config.firecrawl_enabled && (
+                      <label className="flex items-center gap-1.5 text-xs">
+                        <input
+                          type="checkbox"
+                          checked={config.firecrawl_extract_contacts}
+                          onChange={(e) =>
+                            update(key, { firecrawl_extract_contacts: e.target.checked })
+                          }
+                          className="rounded"
+                        />
+                        Extract contacts
+                      </label>
+                    )}
+                  </div>
+                </div>
+                <p className="mt-1 text-xs text-[var(--color-text-muted)]">
+                  Enable Tavily for search-based discovery and Firecrawl for structured page extraction.
+                </p>
               </div>
 
               {/* Max Prospects per Method */}

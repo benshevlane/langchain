@@ -236,6 +236,10 @@ export interface BacklinkTargetConfig {
   max_prospects_per_method: number
   active: boolean
   notes: string
+  tavily_enabled: boolean
+  tavily_search_depth: 'basic' | 'advanced'
+  firecrawl_enabled: boolean
+  firecrawl_extract_contacts: boolean
   created_at: string
   updated_at: string
 }

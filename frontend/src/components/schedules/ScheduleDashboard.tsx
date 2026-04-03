@@ -17,6 +17,12 @@ const CRON_JOBS: CronJob[] = [
     first_delay_seconds: 300,
     description: 'Lightweight check-in: ranking movers, budget alerts, blocker escalation, progress summary',
   },
+  {
+    id: 'scraper_batch',
+    interval_hours: 12,
+    first_delay_seconds: 900,
+    description: 'Batch web scraping and data collection: prospect discovery via Tavily, page extraction via Firecrawl, data enrichment',
+  },
 ]
 
 export function ScheduleDashboard() {

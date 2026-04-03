@@ -9,6 +9,8 @@ interface UseSupabaseOptions {
   filters?: Record<string, string | number | boolean>
   /** Subscribe to Supabase realtime INSERT events on this table. */
   realtime?: boolean
+  /** Enable offset-based pagination. */
+  paginate?: boolean
 }
 
 interface UseSupabaseResult<T> {
@@ -16,6 +18,14 @@ interface UseSupabaseResult<T> {
   loading: boolean
   error: string | null
   refetch: () => void
+  /** Current page (0-indexed). Only meaningful when `paginate` is true. */
+  page: number
+  /** Navigate to a specific page. */
+  setPage: (p: number) => void
+  /** Whether there are more rows beyond the current page. */
+  hasMore: boolean
+  /** Total count of matching rows (available when `paginate` is true). */
+  totalCount: number
 }
 
 export function useSupabase<T>({
@@ -25,11 +35,14 @@ export function useSupabase<T>({
   limit = 100,
   filters,
   realtime = false,
+  paginate = false,
 }: UseSupabaseOptions): UseSupabaseResult<T> {
   const [data, setData] = useState<T[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [tick, setTick] = useState(0)
+  const [page, setPage] = useState(0)
+  const [totalCount, setTotalCount] = useState(0)
 
   const refetch = useCallback(() => setTick((t) => t + 1), [])
 
@@ -49,7 +62,9 @@ export function useSupabase<T>({
     setLoading(true)
 
     const run = async () => {
-      let query = client.from(table).select(select)
+      const offset = paginate ? page * limit : 0
+
+      let query = client.from(table).select(select, paginate ? { count: 'exact' } : undefined)
 
       if (filters) {
         for (const [key, value] of Object.entries(filters)) {
@@ -59,9 +74,13 @@ export function useSupabase<T>({
       if (order) {
         query = query.order(order.column, { ascending: order.ascending ?? false })
       }
-      query = query.limit(limit)
+      if (paginate) {
+        query = query.range(offset, offset + limit - 1)
+      } else {
+        query = query.limit(limit)
+      }
 
-      const { data: rows, error: err } = await query
+      const { data: rows, error: err, count } = await query
       if (cancelled) return
 
       if (err) {
@@ -71,13 +90,16 @@ export function useSupabase<T>({
       } else {
         setData((rows ?? []) as T[])
         setError(null)
+        if (paginate && count != null) {
+          setTotalCount(count)
+        }
       }
       setLoading(false)
     }
 
     run()
     return () => { cancelled = true }
-  }, [table, select, limit, tick, JSON.stringify(order), JSON.stringify(filters)])
+  }, [table, select, limit, tick, page, paginate, JSON.stringify(order), JSON.stringify(filters)])
 
   // Realtime subscription — refetch on INSERT/UPDATE/DELETE
   useEffect(() => {
@@ -99,5 +121,7 @@ export function useSupabase<T>({
     }
   }, [table, realtime])
 
-  return { data, loading, error, refetch }
+  const hasMore = paginate ? (page + 1) * limit < totalCount : false
+
+  return { data, loading, error, refetch, page, setPage, hasMore, totalCount }
 }
