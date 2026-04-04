@@ -23,10 +23,10 @@ jobs:
 
       - name: Run migrations
         env:
-          DATABASE_URL: ${{ secrets.SUPABASE_DB_URL }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: |
           if [ -z "$DATABASE_URL" ]; then
-            echo "::error::SUPABASE_DB_URL secret is not set"
+            echo "::error::DATABASE_URL secret is not set"
             exit 1
           fi
 
