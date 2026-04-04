@@ -3,10 +3,10 @@ builder = "NIXPACKS"
 
 [build.nixpacks]
 buildCmd = "npm install && npm run build"
-startCmd = "npm run start"
+startCmd = "npm install && npm run build"
 
 [deploy]
-startCommand = "npm run start"
+startCommand = "node server.js"
 healthcheckPath = "/"
 restartPolicyType = "ON_FAILURE"
 restartPolicyMaxRetries = 3
