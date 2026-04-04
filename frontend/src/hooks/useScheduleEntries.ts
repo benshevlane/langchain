@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { supabase, isConfigured } from '../utils/supabase'
 import { useSupabase } from './useSupabase'
 import type { ScheduleEntry } from '../types/database'
@@ -30,6 +30,12 @@ export function useScheduleEntries() {
   // Optimistic frequency kept while a save is in-flight so the controlled
   // <select> doesn't revert to the stale derived value during refetch.
   const [optimistic, setOptimistic] = useState<Record<string, FrequencyOption>>({})
+
+  // Clear optimistic overrides once fresh entries arrive from the server.
+  // This ensures the optimistic value persists through the refetch gap.
+  useEffect(() => {
+    setOptimistic({})
+  }, [entries])
 
   const deriveFrequency = useCallback(
     (skillName: string): FrequencyOption => {
@@ -157,14 +163,15 @@ export function useScheduleEntries() {
       } catch (err) {
         console.error('Failed to update schedule:', err)
         setMutationError(err instanceof Error ? err.message : String(err))
-      } finally {
-        savingRef.current = false
-        setSavingSkill(null)
+        // Revert optimistic value on error so the UI reflects actual DB state
         setOptimistic((prev) => {
           const next = { ...prev }
           delete next[skillName]
           return next
         })
+      } finally {
+        savingRef.current = false
+        setSavingSkill(null)
       }
     },
     [refetch],
