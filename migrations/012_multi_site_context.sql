@@ -1,5 +1,6 @@
 -- Multi-site context: scope agent_runs, content, tracked_keywords by site
 -- and add per-site agent configuration table.
+-- Applied via GitHub Actions run_migrations workflow
 
 -- Extend agent_runs to scope by site
 ALTER TABLE agent_runs ADD COLUMN IF NOT EXISTS site TEXT;
