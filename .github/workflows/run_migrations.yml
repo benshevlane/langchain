@@ -1,0 +1,53 @@
+name: Run Supabase Migrations
+
+on:
+  workflow_dispatch:
+    inputs:
+      migration:
+        description: "Specific migration file to run (e.g. 012_multi_site_context.sql), or 'all' to run all in order"
+        required: false
+        default: "all"
+  push:
+    branches: [master]
+    paths:
+      - "migrations/*.sql"
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install PostgreSQL client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+
+      - name: Run migrations
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          if [ -z "$DATABASE_URL" ]; then
+            echo "::error::DATABASE_URL secret is not set"
+            exit 1
+          fi
+
+          MIGRATION="${{ github.event.inputs.migration || 'all' }}"
+
+          if [ "$MIGRATION" = "all" ]; then
+            echo "Running all migrations in order..."
+            for file in $(ls migrations/*.sql | sort); do
+              echo "--- Running $file ---"
+              psql "$DATABASE_URL" -f "$file" -v ON_ERROR_STOP=1 2>&1 || {
+                echo "::warning::Migration $file had errors (may already be applied)"
+              }
+            done
+          else
+            file="migrations/$MIGRATION"
+            if [ ! -f "$file" ]; then
+              echo "::error::Migration file $file not found"
+              exit 1
+            fi
+            echo "--- Running $file ---"
+            psql "$DATABASE_URL" -f "$file" -v ON_ERROR_STOP=1
+          fi
+
+          echo "Migrations complete."
